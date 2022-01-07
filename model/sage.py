@@ -3,9 +3,6 @@ import torch.nn as nn
 import torch.functional as F
 import dgl
 import dgl.nn as dglnn
-import sklearn.linear_model as lm
-import sklearn.metrics as skm
-import tqdm
 
 class SAGE(nn.Module):
     def __init__(self, in_feats, n_hidden, n_classes, n_layers, activation, dropout):
@@ -29,8 +26,7 @@ class SAGE(nn.Module):
 
     def forward(self, blocks, x):
         h = x
-        for l, layer in enumerate(self.layers):
-            block = blocks[l]
+        for l, (block, layer) in enumerate(zip(blocks, self.layers)):
             h = layer(block, h)
             if l != len(self.layers) - 1:
                 h = self.activation(h)
@@ -63,7 +59,7 @@ class SAGE(nn.Module):
                 drop_last=False,
                 num_workers=4)
 
-            for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
+            for input_nodes, output_nodes, blocks in dataloader:
                 block = blocks[0]
 
                 block = block.int().to(device)

@@ -1,5 +1,6 @@
 from collections import namedtuple
-import operator
+from operator import getitem
+from typing import Iterator
 import types
 
 import torch
@@ -7,7 +8,7 @@ import dgl
 import torch.nn as nn
 import torch.nn.functional as F
 from dgl import DGLHeteroGraph
-from torch.fx import GraphModule, Tracer, Graph, Node
+from torch.fx import GraphModule, Tracer, Graph, Node, Proxy
 
 
 InferenceSchema = namedtuple("InferenceSchema", ["inputs", "outputs"])
@@ -43,6 +44,11 @@ def _arg_trace(args):
 
 
 class _ProhibitCallModuleTracer(Tracer):
+
+    def iter(self, obj: 'Proxy') -> Iterator:
+        for i in range(1000):
+            yield obj[i]
+
     def is_leaf_module(self, m: torch.nn.Module, module_qualified_name : str):
         return True
 
@@ -85,6 +91,9 @@ class InferenceHelper(nn.Module):
         for i, n in enumerate(traced.graph.nodes):
             # find a new conv, which likes %getitem = call_function[target=getitem](args = (%blocks, 0), kwargs = {})
             if n.op == 'call_function' and n.target.__name__ == "getitem" and n.args[0].name == graphs_node.name:
+                # unused getitem for graph
+                if n.name not in dep_map:
+                    continue
                 if n.args[1] > curr_layer:
                     if (curr_layer >= 0):
                         # output the node still in dependency map, but not in this input

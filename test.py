@@ -47,9 +47,7 @@ def train():
             opt.zero_grad()
             loss.backward()
             opt.step()
-            # if epoch % 10 == 0:
-            #     print("Epoch {}: {}".format(epoch, (torch.argmax(pred, dim=1) == output_labels).float().sum() / len(pred)))
-    
+
     with torch.no_grad():
         st = time.time()
         pred = model.inference(g, 20, torch.device('cuda'), feat)

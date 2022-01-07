@@ -15,6 +15,7 @@ class StochasticTwoLayerGCN(nn.Module):
         self.n_layers = 3
 
     def forward(self, blocks, x0):
+        # a bit modify here, for topo test
         x_dst0 = x0[:blocks[0].number_of_dst_nodes()]
         x1 = F.relu(self.conv1(blocks[0], (x0, x_dst0)))
         x_dst1 = x1[:blocks[1].number_of_dst_nodes()]
