@@ -62,10 +62,10 @@ class InferenceHelper(nn.Module):
         self._out_features = out_features
         self._layers = []
         self._debug = debug
-        for str in module.__dict__:
-            if hasattr(module, str):
-                attr = getattr(module, str)
-                setattr(self, str, attr)
+        for name in module.__dict__:
+            if hasattr(module, name):
+                attr = getattr(module, name)
+                setattr(self, name, attr)
         self._generate_conv(module)
 
 
@@ -88,19 +88,25 @@ class InferenceHelper(nn.Module):
         curr_input = ()
 
         # enumerate the whole graph
-        for i, n in enumerate(traced.graph.nodes):
+        for lineno, n in enumerate(traced.graph.nodes):
+            # the last output
+            if n.op == 'output':
+                self._layers[-1].outputs.extend([node.name for node in curr_output])
+                graph_layers[-1].output(curr_output[0] if len(curr_output) == 1 else tuple(curr_output))
+            
+            # unused getitem for graph
+            if n.name not in dep_map:
+                continue
+
             # find a new conv, which likes %getitem = call_function[target=getitem](args = (%blocks, 0), kwargs = {})
-            if n.op == 'call_function' and n.target.__name__ == "getitem" and n.args[0].name == graphs_node.name:
-                # unused getitem for graph
-                if n.name not in dep_map:
-                    continue
+            if n.op == 'call_function' and n.target == getitem and n.args[0].name == graphs_node.name:
                 if n.args[1] > curr_layer:
                     if (curr_layer >= 0):
                         # output the node still in dependency map, but not in this input
-                        nodes_for_output = [node for node in curr_output if node not in curr_input]
-                        graph_layers[-1].output(nodes_for_output[0] if len(nodes_for_output) == 1 else tuple(nodes_for_output))
+                        output_nodes = [node for node in curr_output if node not in curr_input]
+                        graph_layers[-1].output(output_nodes[0] if len(output_nodes) == 1 else tuple(output_nodes))
                         # record the name for inference
-                        self._layers[-1].outputs.extend([node.name for node in nodes_for_output])
+                        self._layers[-1].outputs.extend([node.name for node in output_nodes])
                     curr_layer += 1
                     # generate a new graph
                     self._layers.append(InferenceSchema(inputs=[], outputs=[]))
@@ -114,11 +120,7 @@ class InferenceHelper(nn.Module):
                         env[new_node.name] = new_node
                 n.replace_all_uses_with(env[graphs_node.name])
                 continue
-            # the last output
-            if n.op == 'output':
-                self._layers[-1].outputs.extend([node.name for node in curr_output])
-                graph_layers[-1].output(curr_output[0] if len(curr_output) == 1 else tuple(curr_output))
-            # modify a "0" to 0
+
             if n.op not in ('placeholder', 'output'):
                 # trans the 'owning module' in args
                 new_args = _arg_transform(env, n.args)
@@ -126,15 +128,15 @@ class InferenceHelper(nn.Module):
                 created_node = graph_layers[-1].create_node(n.op, n.target, new_args, n.kwargs, n.name)
                 env[created_node.name] = created_node
                 # remove nodes accourding to the dependency map
-                curr_output = tuple(out_node for out_node in curr_output if dep_map[out_node.name] > i)
+                curr_output = tuple(out_node for out_node in curr_output if dep_map[out_node.name] > lineno)
                 curr_output = curr_output + (created_node,)
 
         # register functions
-        for i, graph in enumerate(graph_layers):
+        for layer_id, graph in enumerate(graph_layers):
             # check lint
             graph.lint()
             # register function from graph
-            func_src = self._register_func_from_graph(graph, i)
+            self._register_func_from_graph(graph, layer_id)
 
     def _register_func_from_graph(self, graph: Graph, layer_id: int):
         # get source code
@@ -151,48 +153,48 @@ class InferenceHelper(nn.Module):
             print("----------------------------------------")
 
     @staticmethod
-    def inference_helper_getattr(m, s: str):
-        if s.isnumeric():
-            return m[int(s)]
-        return getattr(m, s)
+    def inference_helper_getattr(obj, name: str):
+        if name.isnumeric():
+            return obj[int(name)]
+        return getattr(obj, name)
 
     def _trace_dependence(self, node_list):
         dep_map = {}
-        for i, n in enumerate(node_list):
+        for i, node in enumerate(node_list):
             if i == 0: # not for blocks
                 continue
-            used_args = _arg_trace(n.args)
+            used_args = _arg_trace(node.args)
             for arg_name in used_args:
                 dep_map[arg_name] = i
         return dep_map
 
     def _init_input_args(self, traced: GraphModule):
         args = ()
-        for i, n in enumerate(traced.graph.nodes):
+        for i, node in enumerate(traced.graph.nodes):
             if i == 0:
-                graph_node = n
-            elif n.op == 'placeholder':
-                args = args + (n,)
+                graph_node = node
+            elif node.op == 'placeholder':
+                args = args + (node,)
             else:
                 break
         return graph_node, args
 
     def _set_function_from_string(self, func_src, func_name):
-        d = dict(locals(), **globals())
-        exec(func_src, d)
-        setattr(self, func_name, types.MethodType(d[func_name], self))
+        globals_vals = globals()
+        exec(func_src, globals_vals)
+        setattr(self, func_name, types.MethodType(globals_vals[func_name], self))
 
     def inference(self, inference_graph, batch_size, device, *args):
         # prepare for the first layer input
-        next_inputs = (inference_graph,) + tuple(args)
+        first_layer_inputs = (inference_graph,) + tuple(args)
         args_map = {}
-        if len(next_inputs) != len(self._layers[0].inputs):
+        if len(first_layer_inputs) != len(self._layers[0].inputs):
             raise Exception("layer's input not match with args.")
-        for arg, name in zip(next_inputs, self._layers[0].inputs):
+        for arg, name in zip(first_layer_inputs, self._layers[0].inputs):
             args_map[name] = arg
         
         # enumerate layers
-        for l, layer in enumerate(self._layers):
+        for layer_id, layer in enumerate(self._layers):
             sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
             dataloader = dgl.dataloading.NodeDataLoader(
                 inference_graph, torch.arange(inference_graph.number_of_nodes()), sampler,
@@ -205,7 +207,7 @@ class InferenceHelper(nn.Module):
                 # TODO determine type
                 rets = rets + (torch.zeros(inference_graph.number_of_nodes(),
                                 self._hidden_features
-                                if l != len(self._layers) - 1
+                                if layer_id != len(self._layers) - 1
                                 else self._out_features),)
             # for loop prepare data
             for input_nodes, output_nodes, blocks in dataloader:
@@ -213,16 +215,16 @@ class InferenceHelper(nn.Module):
                 new_args = ()
                 for arg_name in layer.inputs:
                     if isinstance(args_map[arg_name], torch.Tensor):
-                        new_args = new_args + (args_map[arg_name][input_nodes].to(device),)
+                        new_args += (args_map[arg_name][input_nodes].to(device),)
                     elif isinstance(args_map[arg_name], DGLHeteroGraph):
-                        new_args = new_args + (blocks[0].to(device),)
+                        new_args += (blocks[0].to(device),)
                     elif hasattr(args_map[arg_name], "to"):
-                        new_args = new_args + (args_map[arg_name].to(device),)
+                        new_args += (args_map[arg_name].to(device),)
                     else:
-                        new_args = new_args + (args_map[arg_name],)
+                        new_args += (args_map[arg_name],)
 
                 # run the conv function for this layer
-                func = getattr(self, "forward_conv{}".format(l))
+                func = getattr(self, "forward_conv{}".format(layer_id))
                 output_vals = func(*new_args)
 
                 # write output to rets
@@ -243,6 +245,8 @@ class InferenceHelper(nn.Module):
                 args_map[name] = ret
         
         # return
+        if len(rets) != len(self._layers[-1].outputs):
+            raise Exception("Output not match with rets.")
         if len(rets) == 1:
             return rets[0]
         return rets
