@@ -1,16 +1,18 @@
-import dgl
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import dgl
+import numpy as np
 import time
 from model.gcn import StochasticTwoLayerGCN
 from model.sage import SAGE
+from model.gat import  GAT
 from dgl.data import CiteseerGraphDataset
 from inference_helper import InferenceHelper
 
-def train():
-    dataset = CiteseerGraphDataset()
+
+def train(_class):
+    dataset = CiteseerGraphDataset(verbose=False)
     g : dgl.DGLHeteroGraph = dataset[0]
     train_mask = g.ndata['train_mask']
     val_mask = g.ndata['val_mask']
@@ -29,15 +31,21 @@ def train():
         shuffle=True,
         drop_last=False,
         num_workers=4)
-    
-    # model = StochasticTwoLayerGCN(in_feats, hidden_feature, num_classes)
-    model = SAGE(in_feats, hidden_feature, num_classes, 3, F.relu, 0.5)
-    
+
+    if _class == StochasticTwoLayerGCN:
+        model = StochasticTwoLayerGCN(in_feats, hidden_feature, num_classes)
+    elif _class == SAGE:
+        model = SAGE(in_feats, hidden_feature, num_classes, 3, F.relu, 0.5)
+    elif _class == GAT:
+        model = GAT(3, in_feats, hidden_feature, num_classes, [2, 2, 2], F.relu, 0.5, 0.5, 0.5, 0.5)
+    else:
+        raise NotImplementedError()
+
     model = model.cuda()
     opt = torch.optim.Adam(model.parameters())
     loss_fcn = nn.CrossEntropyLoss()
 
-    for epoch in range(20):
+    for epoch in range(10):
         for input_nodes, output_nodes, blocks in dataloader:
             blocks = [b.to(torch.device('cuda')) for b in blocks]
             output_labels = labels[output_nodes].to(torch.device('cuda'))
@@ -49,21 +57,32 @@ def train():
             opt.step()
 
     with torch.no_grad():
-        st = time.time()
-        pred = model.inference(g, 20, torch.device('cuda'), feat)
-        func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
-        cost_time = time.time() - st
-        print("Origin Inference: {}, inference time: {}".format(func_score, cost_time))
+        print(_class.__name__)
+        if hasattr(model, "inference"):
+            st = time.time()
+            pred = model.inference(g, 20, torch.device('cuda'), feat)
+            func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
+            cost_time = time.time() - st
+            print("Origin Inference: {}, inference time: {}".format(func_score, cost_time))
 
         st = time.time()
-        helper = InferenceHelper(model, hidden_feature, num_classes, debug = False)
+        helper = InferenceHelper(model, debug = False)
         helper_pred = helper.inference(g, 20, torch.device('cuda'), feat)
         helper_score = (torch.argmax(helper_pred, dim=1) == labels).float().sum() / len(helper_pred)
         cost_time = time.time() - st
         print("Helper Inference: {}, inference time: {}".format(helper_score, cost_time))
 
 
-if __name__ == '__main__':    
-    # model = SAGE(3, 3, 3, 3, F.relu, 0.5)
-    # helper = InferenceHelper(model, 3, 3, debug = True)
-    train()
+def test_GCN():
+    train(StochasticTwoLayerGCN)
+
+def test_SAGE():
+    train(SAGE)
+
+def test_GAT():
+    train(GAT)
+
+if __name__ == '__main__':
+    test_GCN()
+    test_SAGE()
+    test_GAT()
