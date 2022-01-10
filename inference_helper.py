@@ -1,4 +1,4 @@
-from collections import namedtuple
+from collections import namedtuple, Iterable
 from operator import getitem
 from typing import Iterator
 import types
@@ -24,7 +24,7 @@ def _arg_transform(env, args):
                 arg.step if not isinstance(arg.step, Node) else env[arg.step.name],
                 arg.stop if not isinstance(arg.stop, Node) else env[arg.stop.name]
             )
-        elif isinstance(arg, tuple):
+        elif isinstance(arg, Iterable):
             new_arg = _arg_transform(env, arg)
         else:
             new_arg = arg
@@ -38,7 +38,7 @@ def _arg_trace(args):
             ret.add(arg.name)
         if isinstance(arg, slice):
             ret = ret.union(_arg_trace((arg.start, arg.step, arg.stop)))
-        if isinstance(arg, tuple):
+        if isinstance(arg, Iterable):
             ret = ret.union(_arg_trace(arg))
     return ret
 
@@ -46,6 +46,7 @@ def _arg_trace(args):
 class _ProhibitCallModuleTracer(Tracer):
 
     def iter(self, obj: 'Proxy') -> Iterator:
+        print("[Warning]: InferenceHelper don't know the length of Graphs, which may cause an endless loop.")
         idx = -1
         while True:
             idx += 1
