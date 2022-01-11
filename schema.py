@@ -123,7 +123,3 @@ class ArgNode():
     
     def __str__(self):
         return "{}, input: {}, output: {}".format(self.name, [layer.id for layer in self.input_layers], self.output_layer)
-
-    @property
-    def last_used_layer(self):
-        return self.input_layers[-1]
