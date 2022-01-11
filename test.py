@@ -9,7 +9,7 @@ from model.sage import SAGE
 from model.gat import  GAT
 from dgl.data import CiteseerGraphDataset
 from inference_helper import InferenceHelper
-
+from memory_profiler import profile
 
 def train(_class):
     dataset = CiteseerGraphDataset(verbose=False)
@@ -66,8 +66,8 @@ def train(_class):
             print("Origin Inference: {}, inference time: {}".format(func_score, cost_time))
 
         st = time.time()
-        helper = InferenceHelper(model, debug = False)
-        helper_pred = helper.inference(g, 20, torch.device('cuda'), feat)
+        helper = InferenceHelper(model, 20, torch.device('cuda'), debug = False)
+        helper_pred = helper.inference(g, feat)
         helper_score = (torch.argmax(helper_pred, dim=1) == labels).float().sum() / len(helper_pred)
         cost_time = time.time() - st
         print("Helper Inference: {}, inference time: {}".format(helper_score, cost_time))
@@ -83,6 +83,12 @@ def test_GAT():
     train(GAT)
 
 if __name__ == '__main__':
+    model = StochasticTwoLayerGCN(3, 3, 3)
+    helper = InferenceHelper(model, 20, torch.device('cuda'), debug = True)
+    model = SAGE(3, 3, 3, 3, F.relu, 0.5)
+    helper = InferenceHelper(model, 20, torch.device('cuda'), debug = True)
+    model = GAT(3, 3, 3, 3, [2, 2, 2], F.relu, 0.5, 0.5, 0.5, 0.5)
+    helper = InferenceHelper(model, 20, torch.device('cuda'), debug = True)
     test_GCN()
     test_SAGE()
     test_GAT()

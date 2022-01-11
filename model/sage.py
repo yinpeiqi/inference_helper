@@ -26,8 +26,8 @@ class SAGE(nn.Module):
 
     def forward(self, blocks, x):
         h = x
-        for l, (block, layer) in enumerate(zip(blocks, self.layers)):
-            h = layer(block, h)
+        for l, layer in enumerate(self.layers):
+            h = layer(blocks[l], h)
             if l != len(self.layers) - 1:
                 h = self.activation(h)
                 h = self.dropout(h)
