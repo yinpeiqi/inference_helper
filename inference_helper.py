@@ -8,13 +8,13 @@ from torch.fx import GraphModule, Graph, Node
 from memory_profiler import profile
 import tqdm
 
-from schema import Schema
-from conv_generator import GraphSpliter
+from schema import generate_schema
 from tracer import ProhibitCallModuleTracer
+from utils import inference_helper_getattr
+from constants import FORWARD_CONV
 
 
 class InferenceHelper(nn.Module):
-
     def __init__(self, module: nn.Module, batch_size, device, debug = False):
         super().__init__()
         # add a '_' in order not crash with the origin one.
@@ -29,40 +29,30 @@ class InferenceHelper(nn.Module):
         self._generate_conv(module)
 
     def _generate_conv(self, module: nn.Module):
-        # trace the module with DGLTracer
         traced = GraphModule(module, ProhibitCallModuleTracer().trace(module))
         if self._debug:
             print("-------- Origin forward function -------")
             print(traced.code.strip())
             print("----------------------------------------")
-        
-        graph_spliter = GraphSpliter(traced.graph.nodes)
-        schema = graph_spliter.generate_conv()
-        # register functions
+
+        schema = generate_schema(traced.graph.nodes)
+
         for layer_id, graph in enumerate(schema.graphs):
-            graph.lint()
-            # register function from graph
             self._register_func_from_graph(graph, layer_id)
 
     def _register_func_from_graph(self, graph: Graph, layer_id: int):
         # get source code
         graph_src = graph.python_code("self").src
-        func_name = "forward_conv{}".format(layer_id)
+        func_name = FORWARD_CONV + str(layer_id)
         # replace the function name
         graph_src = graph_src.replace("def forward(", "def {}(".format(func_name))
         # replace the getattr function
-        graph_src = graph_src.replace(" getattr(", " InferenceHelper.inference_helper_getattr(")
+        graph_src = graph_src.replace(" getattr(", " inference_helper_getattr(")
         self._set_function_from_string(graph_src, func_name)
         if self._debug:
             print("--------- Layer {} conv function --------".format(layer_id))
             print(graph_src.strip())
             print("----------------------------------------")
-
-    @staticmethod
-    def inference_helper_getattr(obj, name: str):
-        if name.isnumeric():
-            return obj[int(name)]
-        return getattr(obj, name)
 
     def _set_function_from_string(self, func_src, func_name):
         globals_vals = globals()
@@ -94,7 +84,7 @@ class InferenceHelper(nn.Module):
         for layer_id, layer in enumerate(self._layers):
             new_args = self._get_new_arg_input(layer.inputs, args_map, [0], dgl.graph((torch.tensor([0]), torch.tensor([0]))))
 
-            func = getattr(self, "forward_conv{}".format(layer_id))
+            func = getattr(self, FORWARD_CONV + str(layer_id))
             output_vals = func(*new_args)
             output_vals = (output_vals,) if not isinstance(output_vals, tuple) else output_vals
             if len(output_vals) != len(layer.outputs):
@@ -138,7 +128,7 @@ class InferenceHelper(nn.Module):
             for input_nodes, output_nodes, blocks in dataloader:
                 new_args = self._get_new_arg_input(layer.inputs, args_map, input_nodes, blocks[0])
                 # run the conv function for this layer
-                func = getattr(self, "forward_conv{}".format(layer_id))
+                func = getattr(self, FORWARD_CONV + str(layer_id))
                 output_vals = func(*new_args)
 
                 # write output to rets

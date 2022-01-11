@@ -1,6 +1,12 @@
 from collections import Iterable
 from torch.fx import Node
 
+
+def inference_helper_getattr(obj, name: str):
+    if name.isnumeric():
+        return obj[int(name)]
+    return getattr(obj, name)
+
 def arg_transform(env, args):
     new_args = ()
     for arg in args:
