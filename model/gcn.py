@@ -24,7 +24,7 @@ class StochasticTwoLayerGCN(nn.Module):
         x3 = F.relu(self.conv3(blocks[2], (x2 + x1.mean()*0.1 + x0.mean()*0.1, x_dst2)))
         return x3
 
-    @profile
+    # @profile
     def inference(self, g, batch_size, device, x):
         """
         Offline inference with this module

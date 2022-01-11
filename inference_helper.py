@@ -18,10 +18,10 @@ class InferenceHelper(nn.Module):
     def __init__(self, module: nn.Module, batch_size, device, debug = False):
         super().__init__()
         # add a '_' in order not crash with the origin one.
-        self._layers = []
         self._batch_size = batch_size
         self._device = device
         self._debug = debug
+        self._schema = None
         for name in module.__dict__:
             if hasattr(module, name):
                 attr = getattr(module, name)
@@ -35,20 +35,19 @@ class InferenceHelper(nn.Module):
             print(traced.code.strip())
             print("----------------------------------------")
 
-        schema = generate_schema(traced.graph.nodes)
+        self._schema = generate_schema(traced.graph.nodes)
 
-        for layer_id, graph in enumerate(schema.graphs):
+        for layer_id, graph in enumerate(self._schema.graphs):
             self._register_func_from_graph(graph, layer_id)
 
     def _register_func_from_graph(self, graph: Graph, layer_id: int):
-        # get source code
         graph_src = graph.python_code("self").src
+
         func_name = FORWARD_CONV + str(layer_id)
-        # replace the function name
         graph_src = graph_src.replace("def forward(", "def {}(".format(func_name))
-        # replace the getattr function
         graph_src = graph_src.replace(" getattr(", " inference_helper_getattr(")
         self._set_function_from_string(graph_src, func_name)
+
         if self._debug:
             print("--------- Layer {} conv function --------".format(layer_id))
             print(graph_src.strip())
@@ -59,56 +58,52 @@ class InferenceHelper(nn.Module):
         exec(func_src, globals_vals)
         setattr(self, func_name, types.MethodType(globals_vals[func_name], self))
 
-    def _get_new_arg_input(self, inputs, args_map, input_nodes, inference_graph):
+    def _get_new_arg_input(self, inputs, arg2val_map, input_nodes, inference_graph):
         new_args = ()
-        for arg_name in inputs:
-            if isinstance(args_map[arg_name], torch.Tensor):
-                new_args += (args_map[arg_name][input_nodes].to(self._device),)
-            elif isinstance(args_map[arg_name], DGLHeteroGraph):
+        for arg_node in inputs:
+            if isinstance(arg2val_map[arg_node], torch.Tensor):
+                new_args += (arg2val_map[arg_node][input_nodes].to(self._device),)
+            elif isinstance(arg2val_map[arg_node], DGLHeteroGraph):
                 new_args += (inference_graph.to(self._device),)
-            elif hasattr(args_map[arg_name], "to"):
-                new_args += (args_map[arg_name].to(self._device),)
+            elif hasattr(arg2val_map[arg_node], "to"):
+                new_args += (arg2val_map[arg_node].to(self._device),)
             else:
-                new_args += (args_map[arg_name],)
+                new_args += (arg2val_map[arg_node],)
         return new_args
 
     def _trace_output_shape(self, first_layer_inputs):
-        args_map = {}
-        if len(first_layer_inputs) != len(self._layers[0].inputs):
+        arg2val_map = {}
+        if len(first_layer_inputs) != len(self._schema.get_layer(0).inputs):
             raise Exception("layer's input not match with args.")
-        for arg, name in zip(first_layer_inputs, self._layers[0].inputs):
-            args_map[name] = arg
+        for val, arg_node in zip(first_layer_inputs, self._schema.get_layer(0).inputs):
+            arg2val_map[arg_node] = val
 
-        ret_shapes = [[] for _ in self._layers]
-        # enumerate layers
-        for layer_id, layer in enumerate(self._layers):
-            new_args = self._get_new_arg_input(layer.inputs, args_map, [0], dgl.graph((torch.tensor([0]), torch.tensor([0]))))
+        ret_shapes = [[] for _ in range(self._schema.graphs_count)]
+        for layer in self._schema.layers:
+            new_args = self._get_new_arg_input(layer.inputs, arg2val_map, [0], dgl.graph((torch.tensor([0]), torch.tensor([0]))))
 
-            func = getattr(self, FORWARD_CONV + str(layer_id))
+            func = getattr(self, FORWARD_CONV + str(layer.id))
             output_vals = func(*new_args)
             output_vals = (output_vals,) if not isinstance(output_vals, tuple) else output_vals
             if len(output_vals) != len(layer.outputs):
                 raise Exception("output values not match with layer's output.")
-            for val, name in zip(output_vals, layer.outputs):
+            for val, arg_node in zip(output_vals, layer.outputs):
                 if not isinstance(val, torch.Tensor):
                     raise NotImplementedError("only support tensor for output now")
-                args_map[name] = val.cpu()
-                ret_shapes[layer_id].append(val.size()[1:])
+                arg2val_map[arg_node] = val.cpu()
+                ret_shapes[layer.id].append(val.size()[1:])
         return ret_shapes
 
-    @profile
+    # @profile
     def inference(self, inference_graph, *args):
         torch.set_grad_enabled(False)
-        # prepare for the first layer input
         first_layer_inputs = (inference_graph,) + tuple(args)
         ret_shapes = self._trace_output_shape(first_layer_inputs)
-        args_map = {}
-        for arg, name in zip(first_layer_inputs, self._layers[0].inputs):
-            args_map[name] = arg
+        arg2val_map = {}
+        for val, arg_node in zip(first_layer_inputs, self._schema.get_layer(0).inputs):
+            arg2val_map[arg_node] = val
 
-        # enumerate layers
-        for layer_id, layer in enumerate(self._layers):
-            # TODO customize sampler and dataloader
+        for layer in self._schema.layers:
             sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
             dataloader = dgl.dataloading.NodeDataLoader(
                 inference_graph, torch.arange(inference_graph.number_of_nodes()), sampler,
@@ -116,32 +111,32 @@ class InferenceHelper(nn.Module):
                 shuffle=False,
                 drop_last=False)
 
-            # define returns
-            rets = ()
+            rets = []
             for j, _ in enumerate(layer.outputs):
-                # TODO determine type
-                rets = rets + (torch.zeros(
-                    (inference_graph.number_of_nodes(),) + tuple(ret_shapes[layer_id][j])
-                ),)
+                rets.append(
+                    torch.zeros((inference_graph.number_of_nodes(),) + tuple(ret_shapes[layer.id][j]))
+                )
 
-            # for loop prepare data
             for input_nodes, output_nodes, blocks in dataloader:
-                new_args = self._get_new_arg_input(layer.inputs, args_map, input_nodes, blocks[0])
-                # run the conv function for this layer
-                func = getattr(self, FORWARD_CONV + str(layer_id))
+                new_args = self._get_new_arg_input(layer.inputs, arg2val_map, input_nodes, blocks[0])
+
+                func = getattr(self, FORWARD_CONV + str(layer.id))
                 output_vals = func(*new_args)
 
-                # write output to rets
-                output_vals = (output_vals,) if not isinstance(output_vals, tuple) else output_vals
+                if not isinstance(output_vals, tuple):
+                    output_vals = (output_vals,)
                 for output_val, ret in zip(output_vals, rets):
                     if isinstance(output_val, torch.Tensor):
                         ret[output_nodes] = output_val.cpu()
 
-            # record outputs into args_map
-            for ret, name in zip(rets, layer.outputs):
-                args_map[name] = ret
+            # delete intermediate val
+            for arg_node in layer.inputs:
+                if arg_node.input_layers[-1] == layer and arg_node.input_layers[0] != self._schema.get_layer(0):
+                    del arg2val_map[arg_node]
 
-        # return
+            for ret, arg_node in zip(rets, layer.outputs):
+                arg2val_map[arg_node] = ret
+
         if len(rets) == 1:
             return rets[0]
-        return rets
+        return tuple(rets)
