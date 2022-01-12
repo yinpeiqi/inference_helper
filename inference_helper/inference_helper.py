@@ -16,11 +16,12 @@ from .constants import FORWARD_CONV
 
 
 class InferenceHelper(nn.Module):
-    def __init__(self, module: nn.Module, batch_size, device, debug = False):
+    def __init__(self, module: nn.Module, batch_size, device, num_workers = 4, debug = False):
         super().__init__()
         # add a '_' in order not crash with the origin one.
         self._batch_size = batch_size
         self._device = device
+        self._num_workers = num_workers
         self._debug = debug
         self._schema = None
         for name in module.__dict__:
@@ -63,7 +64,9 @@ class InferenceHelper(nn.Module):
         new_args = ()
         for arg_node in inputs:
             if isinstance(arg2val_map[arg_node], torch.Tensor):
+                # t = time.time()
                 new_args += (arg2val_map[arg_node][input_nodes].to(self._device),)
+                # print("transfer time:", time.time()-t)
             elif isinstance(arg2val_map[arg_node], DGLHeteroGraph):
                 new_args += (inference_graph.int().to(self._device),)
             elif hasattr(arg2val_map[arg_node], "to"):
@@ -107,10 +110,14 @@ class InferenceHelper(nn.Module):
         for layer in self._schema.layers:
             sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
             dataloader = dgl.dataloading.NodeDataLoader(
-                inference_graph, torch.arange(inference_graph.number_of_nodes()), sampler,
+                inference_graph,
+                torch.arange(inference_graph.number_of_nodes()).to(inference_graph.device),
+                sampler,
                 batch_size=self._batch_size,
+                device=self._device if self._num_workers == 0 else None,
                 shuffle=False,
-                drop_last=False)
+                drop_last=False,
+                num_workers=self._num_workers)
 
             rets = []
             for j, _ in enumerate(layer.outputs):
@@ -119,7 +126,7 @@ class InferenceHelper(nn.Module):
                 )
 
             for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
-                s = time.time()
+                print("start GPU:", torch.cuda.max_memory_allocated() / 1024 / 1024, "MB")
                 new_args = self._get_new_arg_input(layer.inputs, arg2val_map, input_nodes, blocks[0])
 
                 func = getattr(self, FORWARD_CONV + str(layer.id))
@@ -130,8 +137,8 @@ class InferenceHelper(nn.Module):
                 for output_val, ret in zip(output_vals, rets):
                     if isinstance(output_val, torch.Tensor):
                         ret[output_nodes] = output_val.cpu()
-                print(time.time()-s)
-
+                
+                print("end GPU:", torch.cuda.max_memory_allocated() / 1024 / 1024, "MB")
             # delete intermediate val
             for arg_node in layer.inputs:
                 if arg_node.input_layers[-1] == layer and arg_node.input_layers[0] != self._schema.get_layer(0):

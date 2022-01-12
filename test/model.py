@@ -77,6 +77,7 @@ class SAGE(nn.Module):
                 num_workers=num_workers)
 
             for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
+                print("start GPU:", th.cuda.max_memory_allocated() / 1024 / 1024, "MB")
                 block = blocks[0]
 
                 block = block.int().to(device)
@@ -87,6 +88,7 @@ class SAGE(nn.Module):
                 #     h = self.dropout(h)
 
                 y[output_nodes] = h.cpu()
+                print("end GPU:", th.cuda.max_memory_allocated() / 1024 / 1024, "MB")
 
             x = y
         return y
