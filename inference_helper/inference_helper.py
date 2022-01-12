@@ -1,5 +1,6 @@
 import types
 
+import time
 import dgl
 import torch
 import torch.nn as nn
@@ -118,7 +119,6 @@ class InferenceHelper(nn.Module):
                 )
 
             for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
-                import time
                 s = time.time()
                 new_args = self._get_new_arg_input(layer.inputs, arg2val_map, input_nodes, blocks[0])
 
@@ -130,6 +130,7 @@ class InferenceHelper(nn.Module):
                 for output_val, ret in zip(output_vals, rets):
                     if isinstance(output_val, torch.Tensor):
                         ret[output_nodes] = output_val.cpu()
+                print(time.time()-s)
 
             # delete intermediate val
             for arg_node in layer.inputs:
@@ -138,7 +139,6 @@ class InferenceHelper(nn.Module):
 
             for ret, arg_node in zip(rets, layer.outputs):
                 arg2val_map[arg_node] = ret
-                print(time.time()-s)
 
         if len(rets) == 1:
             return rets[0]
