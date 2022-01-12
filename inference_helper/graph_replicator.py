@@ -1,6 +1,6 @@
 from torch.fx import Graph, Node
 
-from utils import arg_transform
+from .utils import arg_transform
 
 
 class GraphReplicator(Graph):

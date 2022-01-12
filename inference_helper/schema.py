@@ -1,8 +1,8 @@
 from operator import getitem
 
-from node_iterator import TaggedNodeIterator
-from graph_replicator import GraphReplicator
-from constants import CALL_FUNCTION, PLACEHOLDER, OUTPUT
+from .node_iterator import TaggedNodeIterator
+from .graph_replicator import GraphReplicator
+from .constants import CALL_FUNCTION, PLACEHOLDER, OUTPUT
 
 def generate_schema(node_list):
     schema = Schema()

@@ -1,6 +1,7 @@
 from operator import getitem
-from utils import arg_trace
-from constants import CALL_FUNCTION, PLACEHOLDER, OUTPUT
+
+from .utils import arg_trace
+from .constants import CALL_FUNCTION, PLACEHOLDER, OUTPUT
 
 
 class TaggedNodeIterator():

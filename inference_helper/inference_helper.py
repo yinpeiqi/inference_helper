@@ -8,10 +8,10 @@ from torch.fx import GraphModule, Graph, Node
 from memory_profiler import profile
 import tqdm
 
-from schema import generate_schema
-from tracer import ProhibitCallModuleTracer
-from utils import inference_helper_getattr
-from constants import FORWARD_CONV
+from .schema import generate_schema
+from .tracer import ProhibitCallModuleTracer
+from .utils import inference_helper_getattr
+from .constants import FORWARD_CONV
 
 
 class InferenceHelper(nn.Module):
@@ -64,7 +64,7 @@ class InferenceHelper(nn.Module):
             if isinstance(arg2val_map[arg_node], torch.Tensor):
                 new_args += (arg2val_map[arg_node][input_nodes].to(self._device),)
             elif isinstance(arg2val_map[arg_node], DGLHeteroGraph):
-                new_args += (inference_graph.to(self._device),)
+                new_args += (inference_graph.int().to(self._device),)
             elif hasattr(arg2val_map[arg_node], "to"):
                 new_args += (arg2val_map[arg_node].to(self._device),)
             else:
@@ -117,7 +117,9 @@ class InferenceHelper(nn.Module):
                     torch.zeros((inference_graph.number_of_nodes(),) + tuple(ret_shapes[layer.id][j]))
                 )
 
-            for input_nodes, output_nodes, blocks in dataloader:
+            for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
+                import time
+                s = time.time()
                 new_args = self._get_new_arg_input(layer.inputs, arg2val_map, input_nodes, blocks[0])
 
                 func = getattr(self, FORWARD_CONV + str(layer.id))
@@ -136,6 +138,7 @@ class InferenceHelper(nn.Module):
 
             for ret, arg_node in zip(rets, layer.outputs):
                 arg2val_map[arg_node] = ret
+                print(time.time()-s)
 
         if len(rets) == 1:
             return rets[0]
