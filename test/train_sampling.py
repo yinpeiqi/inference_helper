@@ -7,7 +7,6 @@ import torch.optim as optim
 import dgl.nn.pytorch as dglnn
 import time
 import argparse
-import tqdm
 from inference_helper import InferenceHelper
 import os
 import psutil
@@ -37,10 +36,10 @@ def evaluate(model, g, nfeat, labels, val_nid, device):
         print("start CPU:", psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024, "MB")
         print("start GPU:", th.cuda.max_memory_allocated() / 1024 / 1024, "MB")
         
-        # helper = InferenceHelper(model, 1000, device)
-        # pred = helper.inference(g, nfeat)
+        helper = InferenceHelper(model, args.batch_size, device)
+        pred = helper.inference(g, nfeat)
         
-        pred = model.inference(g, nfeat, device, args.batch_size, args.num_workers)
+        # pred = model.inference(g, nfeat, device, args.batch_size, args.num_workers)
 
         print("end CPU:", psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024, "MB")
         print("end GPU:", th.cuda.max_memory_allocated() / 1024 / 1024, "MB")
@@ -140,7 +139,7 @@ if __name__ == '__main__':
     argparser.add_argument('--gpu', type=int, default=0,
                            help="GPU device ID. Use -1 for CPU training")
     argparser.add_argument('--dataset', type=str, default='reddit')
-    argparser.add_argument('--num-epochs', type=int, default=20)
+    argparser.add_argument('--num-epochs', type=int, default=11)
     argparser.add_argument('--num-hidden', type=int, default=16)
     argparser.add_argument('--num-layers', type=int, default=2)
     argparser.add_argument('--fan-out', type=str, default='10,25')

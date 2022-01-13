@@ -6,7 +6,6 @@ import torch
 import torch.nn as nn
 from dgl import DGLHeteroGraph
 from torch.fx import GraphModule, Graph, Node
-from memory_profiler import profile
 import tqdm
 
 from .schema import generate_schema
@@ -64,9 +63,7 @@ class InferenceHelper(nn.Module):
         new_args = ()
         for arg_node in inputs:
             if isinstance(arg2val_map[arg_node], torch.Tensor):
-                # t = time.time()
                 new_args += (arg2val_map[arg_node][input_nodes].to(self._device),)
-                # print("transfer time:", time.time()-t)
             elif isinstance(arg2val_map[arg_node], DGLHeteroGraph):
                 new_args += (inference_graph.int().to(self._device),)
             elif hasattr(arg2val_map[arg_node], "to"):
@@ -98,9 +95,7 @@ class InferenceHelper(nn.Module):
                 ret_shapes[layer.id].append(val.size()[1:])
         return ret_shapes
 
-    # @profile
     def inference(self, inference_graph, *args):
-        torch.set_grad_enabled(False)
         first_layer_inputs = (inference_graph,) + tuple(args)
         ret_shapes = self._trace_output_shape(first_layer_inputs)
         arg2val_map = {}
@@ -126,19 +121,18 @@ class InferenceHelper(nn.Module):
                 )
 
             for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
-                print("start GPU:", torch.cuda.max_memory_allocated() / 1024 / 1024, "MB")
                 new_args = self._get_new_arg_input(layer.inputs, arg2val_map, input_nodes, blocks[0])
 
                 func = getattr(self, FORWARD_CONV + str(layer.id))
                 output_vals = func(*new_args)
+                del new_args
 
                 if not isinstance(output_vals, tuple):
                     output_vals = (output_vals,)
                 for output_val, ret in zip(output_vals, rets):
                     if isinstance(output_val, torch.Tensor):
                         ret[output_nodes] = output_val.cpu()
-                
-                print("end GPU:", torch.cuda.max_memory_allocated() / 1024 / 1024, "MB")
+
             # delete intermediate val
             for arg_node in layer.inputs:
                 if arg_node.input_layers[-1] == layer and arg_node.input_layers[0] != self._schema.get_layer(0):
