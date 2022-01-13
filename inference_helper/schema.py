@@ -1,44 +1,4 @@
-from operator import getitem
-
-from .node_iterator import TaggedNodeIterator
 from .graph_replicator import GraphReplicator
-from .constants import CALL_FUNCTION, PLACEHOLDER, OUTPUT
-
-def generate_schema(node_list):
-    schema = Schema()
-    curr_graph = schema.create_graph()
-
-    node_iterator = TaggedNodeIterator(node_list)
-    for n, is_split in node_iterator:
-        if is_split:
-            curr_inputs, curr_outputs = node_iterator.get_curr_input_and_output()
-            output_nodes = [curr_graph.env[node_name] for node_name in curr_outputs]
-
-            schema.record_outputs(output_nodes)
-            curr_graph.insert_output(output_nodes)
-
-            curr_graph = schema.create_graph()
-
-            schema.record_inputs(curr_inputs)
-            curr_graph.insert_inputs(curr_inputs)
-
-        if n.op == CALL_FUNCTION and n.target == getitem and n.args[0].name == schema.blocks_name:
-            n.replace_all_uses_with(curr_graph.env[schema.blocks_name])
-            continue
-
-        if n.op == PLACEHOLDER:
-            schema.record_input(n.name)
-            curr_graph.insert_input(n.name)
-        elif n.op == OUTPUT:
-            schema.record_outputs(n.args)
-            curr_graph.insert_output(n.args)
-        else:
-            curr_graph.insert_node_copy(n)
-
-    for graph in schema.graphs:
-        graph.lint()
-
-    return schema
 
 
 class Schema():

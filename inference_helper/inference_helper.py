@@ -8,7 +8,7 @@ from dgl import DGLHeteroGraph
 from torch.fx import GraphModule, Graph, Node
 import tqdm
 
-from .schema import generate_schema
+from .graph_spliter import GraphSpliter
 from .tracer import ProhibitCallModuleTracer
 from .utils import inference_helper_getattr
 from .constants import FORWARD_CONV
@@ -36,7 +36,8 @@ class InferenceHelper(nn.Module):
             print(traced.code.strip())
             print("----------------------------------------")
 
-        self._schema = generate_schema(traced.graph.nodes)
+        spliter = GraphSpliter(traced.graph.nodes)
+        self._schema = spliter.split_graph()
 
         for layer_id, graph in enumerate(self._schema.graphs):
             self._register_func_from_graph(graph, layer_id)

@@ -1,7 +1,5 @@
-from operator import getitem
-
 from .utils import arg_trace
-from .constants import CALL_FUNCTION, PLACEHOLDER, OUTPUT
+from .constants import PLACEHOLDER
 
 
 class TaggedNodeIterator():
@@ -13,26 +11,13 @@ class TaggedNodeIterator():
         self.lineno = 0
 
     def __iter__(self):
-        blocks_name = None
-        graph_layer_set = set()
         self.lineno = 0
 
         for lineno, node in enumerate(self.node_list):
-            if node.op != OUTPUT and node.name not in self.dep_map:
-                continue
-
-            is_split = False
-            if node.op == CALL_FUNCTION and node.target == getitem and node.args[0].name == blocks_name:
-                if node.args[1] not in graph_layer_set and len(graph_layer_set) != 0:
-                    is_split = True
-                graph_layer_set.add(node.args[1])
-            
-            yield node, is_split
+            yield node
 
             self.lineno = lineno
             if node.op == PLACEHOLDER:
-                if blocks_name is None:
-                    blocks_name = node.name
                 self.curr_inputs.append(node.name)
             self.curr_outputs.append(node.name)
 
