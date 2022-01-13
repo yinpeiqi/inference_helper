@@ -1,23 +1,33 @@
 from .graph_replicator import GraphReplicator
+from .constants import PLACEHOLDER, OUTPUT
+from .utils import arg_trace
 
 
 class Schema():
     def __init__(self):
         self.layers = []
-        self.graphs = []
         self.name2arg_map = {}
         self.blocks_name = None
+        self.first_layer_input = []
 
-    def create_graph(self):
+    def record_first_layer_input(self, origin_graph):
+        for node in origin_graph.nodes:
+            if node.op == PLACEHOLDER:
+                self.first_layer_input.append(node.name)
+            else:
+                break
+
+    def create_layer(self, graph):
         self.layers.append(GraphLayer(self))
-        self.graphs.append(GraphReplicator())
-        return self.curr_graph
+        for node in graph.nodes:
+            if node.op == PLACEHOLDER:
+                self.record_input(node.name)
+            elif node.op == OUTPUT:
+                output_nodes = arg_trace(node.args)
+                self.record_outputs(output_nodes)
 
     def get_layer(self, id):
         return self.layers[id]
-
-    def get_graph(self, id):
-        return self.graphs[id]
 
     def record_input(self, name):
         if self.blocks_name is None:
@@ -33,34 +43,30 @@ class Schema():
             self.record_input(name)
 
     def record_output(self, name):
-        if name in self.name2arg_map:
-            raise RuntimeError("The output name is used before!")
+        # if name in self.name2arg_map:
+        #     raise RuntimeError("The output name is used before!")
         output_arg = ArgNode(name, self.curr_layer)
         self.name2arg_map[name] = output_arg
         self.curr_layer.add_output(output_arg)
 
-    def record_outputs(self, nodes):
-        for node in nodes:
-            self.record_output(node.name)
+    def record_outputs(self, names):
+        for name in names:
+            self.record_output(name)
 
     @property
     def curr_layer(self):
         return self.layers[-1]
 
     @property
-    def curr_graph(self):
-        return self.graphs[-1]
-
-    @property
-    def graphs_count(self):
-        return len(self.graphs)
+    def layers_count(self):
+        return len(self.layers)
 
 
 class GraphLayer():
     def __init__(self, schema: Schema):
         super().__init__()
         self.schema = schema
-        self.id = schema.graphs_count
+        self.id = schema.layers_count
         self.inputs: list[ArgNode] = []
         self.outputs: list[ArgNode] = []
 

@@ -9,8 +9,10 @@ from torch.fx import GraphModule, Graph, Node
 import tqdm
 
 from .graph_spliter import GraphSpliter
+from .schema import Schema
 from .tracer import ProhibitCallModuleTracer
 from .utils import inference_helper_getattr
+from .graph_rewriter import GraphRewriter
 from .constants import FORWARD_CONV
 
 
@@ -27,20 +29,28 @@ class InferenceHelper(nn.Module):
             if hasattr(module, name):
                 attr = getattr(module, name)
                 setattr(self, name, attr)
-        self._generate_conv(module)
+        self._module_split(module)
 
-    def _generate_conv(self, module: nn.Module):
+    def _module_split(self, module: nn.Module):
         traced = GraphModule(module, ProhibitCallModuleTracer().trace(module))
         if self._debug:
             print("-------- Origin forward function -------")
             print(traced.code.strip())
             print("----------------------------------------")
 
-        spliter = GraphSpliter(traced.graph.nodes)
-        self._schema = spliter.split_graph()
+        self._schema = Schema()
+        self._schema.record_first_layer_input(traced.graph)
+        GraphRewriter.blocks_to_graph(traced.graph)
+        GraphRewriter.remove_unused_nodes(traced.graph)
+        traced.recompile()
 
-        for layer_id, graph in enumerate(self._schema.graphs):
+        spliter = GraphSpliter(traced.graph.nodes)
+        graphs_list = spliter.split_graph(spliter.get_split_linenos())
+
+        for layer_id, graph in enumerate(graphs_list):
+            GraphRewriter.remove_unused_nodes(graph)
             self._register_func_from_graph(graph, layer_id)
+            self._schema.create_layer(graph)
 
     def _register_func_from_graph(self, graph: Graph, layer_id: int):
         graph_src = graph.python_code("self").src
@@ -73,14 +83,8 @@ class InferenceHelper(nn.Module):
                 new_args += (arg2val_map[arg_node],)
         return new_args
 
-    def _trace_output_shape(self, first_layer_inputs):
-        arg2val_map = {}
-        if len(first_layer_inputs) != len(self._schema.get_layer(0).inputs):
-            raise Exception("layer's input not match with args.")
-        for val, arg_node in zip(first_layer_inputs, self._schema.get_layer(0).inputs):
-            arg2val_map[arg_node] = val
-
-        ret_shapes = [[] for _ in range(self._schema.graphs_count)]
+    def _trace_output_shape(self, arg2val_map):
+        ret_shapes = [[] for _ in range(self._schema.layers_count)]
         for layer in self._schema.layers:
             new_args = self._get_new_arg_input(layer.inputs, arg2val_map, [0], dgl.graph((torch.tensor([0]), torch.tensor([0]))))
 
@@ -98,10 +102,13 @@ class InferenceHelper(nn.Module):
 
     def inference(self, inference_graph, *args):
         first_layer_inputs = (inference_graph,) + tuple(args)
-        ret_shapes = self._trace_output_shape(first_layer_inputs)
+        if len(first_layer_inputs) != len(self._schema.first_layer_input):
+            raise Exception("layer's input not match with args.")
         arg2val_map = {}
-        for val, arg_node in zip(first_layer_inputs, self._schema.get_layer(0).inputs):
+        for val, arg_name in zip(first_layer_inputs, self._schema.first_layer_input):
+            arg_node = self._schema.name2arg_map[arg_name]
             arg2val_map[arg_node] = val
+        ret_shapes = self._trace_output_shape(arg2val_map)
 
         for layer in self._schema.layers:
             sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
@@ -132,7 +139,12 @@ class InferenceHelper(nn.Module):
                     output_vals = (output_vals,)
                 for output_val, ret in zip(output_vals, rets):
                     if isinstance(output_val, torch.Tensor):
-                        ret[output_nodes] = output_val.cpu()
+                        if output_val.size()[0] == blocks[0].num_dst_nodes():
+                            ret[output_nodes] = output_val.cpu()
+                        elif output_val.size()[0] == blocks[0].num_src_nodes():
+                            ret[input_nodes] = output_val.cpu()
+                        else:
+                            raise RuntimeError("Can't determine return's type.")
 
             # delete intermediate val
             for arg_node in layer.inputs:

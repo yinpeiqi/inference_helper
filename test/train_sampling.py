@@ -38,7 +38,7 @@ def evaluate(model, g, nfeat, labels, val_nid, device):
         
         helper = InferenceHelper(model, args.batch_size, device)
         pred = helper.inference(g, nfeat)
-        
+
         # pred = model.inference(g, nfeat, device, args.batch_size, args.num_workers)
 
         print("end CPU:", psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024, "MB")
