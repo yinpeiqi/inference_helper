@@ -1,6 +1,5 @@
 from .utils import arg_trace
-from .constants import CALL_MODULE, PLACEHOLDER, OUTPUT
-
+from .constants import CALL_MODULE, PLACEHOLDER
 
 
 class SplitPlanGenerator():
