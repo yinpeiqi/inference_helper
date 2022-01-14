@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 from torch.fx import GraphModule, Graph
 
+from .split_plan import SplitPlanGenerator
 from .graph_spliter import GraphSpliter
 from .schema import Schema
 from .tracer import ProhibitCallModuleTracer
@@ -44,7 +45,9 @@ class FunctionGenerator(nn.Module):
             print("----------------------------------------")
 
         spliter = GraphSpliter(traced.graph.nodes)
-        graphs_list = spliter.split_graph(spliter.get_split_linenos())
+        planner = SplitPlanGenerator(traced.graph.nodes)
+        split_linenos = planner.get_split_plan()
+        graphs_list = spliter.split_graph(split_linenos)
 
         for layer_id, graph in enumerate(graphs_list):
             GraphRewriter.remove_unused_nodes(graph)

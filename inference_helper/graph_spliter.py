@@ -1,7 +1,6 @@
-from .utils import arg_trace
 from .graph_replicator import GraphReplicator
 from .node_iterator import TaggedNodeIterator
-from .constants import CALL_MODULE, PLACEHOLDER, OUTPUT
+from .constants import PLACEHOLDER, OUTPUT
 
 
 class GraphSpliter():
@@ -37,15 +36,3 @@ class GraphSpliter():
         for graph in self.graphs_list:
             graph.lint()
         return self.graphs_list
-
-    def get_split_linenos(self):
-        blocks_name = None
-        split_linenos = []
-        for lineno, node in enumerate(self.node_list):
-            if node.op == CALL_MODULE and blocks_name in arg_trace(node.args):
-                split_linenos.append(lineno + 1)
-
-            if node.op == PLACEHOLDER:
-                if blocks_name is None:
-                    blocks_name = node.name
-        return split_linenos[:-1]

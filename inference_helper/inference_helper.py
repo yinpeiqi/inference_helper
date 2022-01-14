@@ -20,11 +20,6 @@ class InferenceHelper():
         self._schema = self._function_generator.get_schema()
         self._funcs = self._function_generator.get_funcs()
 
-    def _set_function_from_string(self, func_src, func_name):
-        globals_vals = globals()
-        exec(func_src, globals_vals)
-        setattr(self, func_name, types.MethodType(globals_vals[func_name], self))
-
     def _get_new_arg_input(self, inputs, arg2val_map, input_nodes, inference_graph):
         new_args = ()
         for arg_node in inputs:
