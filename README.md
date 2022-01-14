@@ -62,4 +62,61 @@ If we have a massive graph with millions or even billions of nodes or edges, usu
 
 By using the sampling strategy, user only need to write the module code just like what to do with the full graph training. However, the situation is different when inferencing. 
 
+The inference algorithm is different from the training algorithm, as the representations of all nodes should be computed layer by layer, starting from the first layer. Specifically, for a particular layer, we need to compute the output representations of all nodes from this GNN layer in minibatches. The consequence is that the inference algorithm will have an outer loop iterating over the layers, and an inner loop iterating over the minibatches of nodes. In contrast, the training algorithm has an outer loop iterating over the minibatches of nodes, and an inner loop iterating over the layers for both neighborhood sampling and message passing. The code is shown below.
+
+```python
+class StochasticTwoLayerGCN(nn.Module):
+    def __init__(self, in_features, hidden_features, out_features):
+        super().__init__()
+        self.hidden_features = hidden_features
+        self.out_features = out_features
+        self.conv1 = dgl.nn.GraphConv(in_features, hidden_features)
+        self.conv2 = dgl.nn.GraphConv(hidden_features, out_features)
+        self.n_layers = 2
+
+    def forward(self, blocks, x):
+        x_dst = x[:blocks[0].number_of_dst_nodes()]
+        x = F.relu(self.conv1(blocks[0], (x, x_dst)))
+        x_dst = x[:blocks[1].number_of_dst_nodes()]
+        x = F.relu(self.conv2(blocks[1], (x, x_dst)))
+        return x
+
+    def inference(self, g, x, batch_size, device):
+        """
+        Offline inference with this module
+        """
+        # Compute representations layer by layer
+        for l, layer in enumerate([self.conv1, self.conv2]):
+            y = torch.zeros(g.number_of_nodes(),
+                            self.hidden_features
+                            if l != self.n_layers - 1
+                            else self.out_features)
+            sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
+            dataloader = dgl.dataloading.NodeDataLoader(
+                g, torch.arange(g.number_of_nodes()), sampler,
+                batch_size=batch_size,
+                shuffle=True,
+                drop_last=False)
+
+            # Within a layer, iterate over nodes in batches
+            for input_nodes, output_nodes, blocks in dataloader:
+                block = blocks[0]
+
+                # Copy the features of necessary input nodes to GPU
+                h = x[input_nodes].to(device)
+                # Compute output.  Note that this computation is the same
+                # but only for a single layer.
+                h_dst = h[:block.number_of_dst_nodes()]
+                h = F.relu(layer(block, (h, h_dst)))
+                # Copy to output back to CPU.
+                y[output_nodes] = h.cpu()
+
+            x = y
+
+        return y
+```
+The inference code is quite different from the training one, which increase the overhead for user to implement a GNN model for large graphs. Inference helper can reduce this overhead, provide ready-made function interface for the inference step.
 ## Design
+Inference Helper contains two components: function generator and inference.
+
+Function generator aims at generate several convolution functions by spliting the forward function by each layers. Function generator use torch FX, which can provide tranformation between a pytorch module and a python computation graph IR. Function generator first trace the forward function with torch FX, and determine whether the forward function using a blocks or a graph as input. If a blocks is used, then transfrom it to graph. 
