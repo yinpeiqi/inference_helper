@@ -57,6 +57,9 @@ helper = InferenceHelper(model, batch_size, device, num_workers)
 pred = helper.inference(g, nfeat)
 ```
 
-## Background
 ## Motivation
+If we have a massive graph with millions or even billions of nodes or edges, usually full-graph training would not work. Consider an 𝐿-layer graph convolutional network with hidden state size 𝐻 running on an 𝑁-node graph. Storing the intermediate hidden states requires 𝑂(𝑁𝐿𝐻) memory, easily exceeding one GPU’s capacity with large 𝑁. Sampling like subgraph sampling and stochastic minibatch sampling stretegy is widely adopt in this scenario.
+
+By using the sampling strategy, user only need to write the module code just like what to do with the full graph training. However, the situation is different when inferencing. 
+
 ## Design
