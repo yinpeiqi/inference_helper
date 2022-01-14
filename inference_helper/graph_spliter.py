@@ -19,9 +19,6 @@ class GraphSpliter():
         node_iterator = TaggedNodeIterator(self.node_list)
 
         for lineno, n in enumerate(node_iterator):
-            if n.op != OUTPUT and n.name not in node_iterator.dep_map:
-                continue
-
             if lineno in split_linenos:
                 curr_inputs, curr_outputs = node_iterator.get_curr_input_and_output()
                 output_nodes = [curr_graph.env[node_name] for node_name in curr_outputs]

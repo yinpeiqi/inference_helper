@@ -1,69 +1,24 @@
 import types
 
-import time
 import dgl
 import torch
 import torch.nn as nn
 from dgl import DGLHeteroGraph
-from torch.fx import GraphModule, Graph, Node
 import tqdm
 
-from .graph_spliter import GraphSpliter
-from .schema import Schema
-from .tracer import ProhibitCallModuleTracer
-from .utils import inference_helper_getattr
-from .graph_rewriter import GraphRewriter
 from .constants import FORWARD_CONV
+from .function_generator import FunctionGenerator
 
 
-class InferenceHelper(nn.Module):
+class InferenceHelper():
     def __init__(self, module: nn.Module, batch_size, device, num_workers = 4, debug = False):
-        super().__init__()
         # add a '_' in order not crash with the origin one.
         self._batch_size = batch_size
         self._device = device
         self._num_workers = num_workers
-        self._debug = debug
-        self._schema = None
-        for name in module.__dict__:
-            if hasattr(module, name):
-                attr = getattr(module, name)
-                setattr(self, name, attr)
-        self._module_split(module)
-
-    def _module_split(self, module: nn.Module):
-        traced = GraphModule(module, ProhibitCallModuleTracer().trace(module))
-        if self._debug:
-            print("-------- Origin forward function -------")
-            print(traced.code.strip())
-            print("----------------------------------------")
-
-        self._schema = Schema()
-        self._schema.record_first_layer_input(traced.graph)
-        GraphRewriter.blocks_to_graph(traced.graph)
-        GraphRewriter.remove_unused_nodes(traced.graph)
-        traced.recompile()
-
-        spliter = GraphSpliter(traced.graph.nodes)
-        graphs_list = spliter.split_graph(spliter.get_split_linenos())
-
-        for layer_id, graph in enumerate(graphs_list):
-            GraphRewriter.remove_unused_nodes(graph)
-            self._register_func_from_graph(graph, layer_id)
-            self._schema.create_layer(graph)
-
-    def _register_func_from_graph(self, graph: Graph, layer_id: int):
-        graph_src = graph.python_code("self").src
-
-        func_name = FORWARD_CONV + str(layer_id)
-        graph_src = graph_src.replace("def forward(", "def {}(".format(func_name))
-        graph_src = graph_src.replace(" getattr(", " inference_helper_getattr(")
-        self._set_function_from_string(graph_src, func_name)
-
-        if self._debug:
-            print("--------- Layer {} conv function --------".format(layer_id))
-            print(graph_src.strip())
-            print("----------------------------------------")
+        self._function_generator = FunctionGenerator(module, debug)
+        self._schema = self._function_generator.get_schema()
+        self._funcs = self._function_generator.get_funcs()
 
     def _set_function_from_string(self, func_src, func_name):
         globals_vals = globals()
@@ -76,7 +31,7 @@ class InferenceHelper(nn.Module):
             if isinstance(arg2val_map[arg_node], torch.Tensor):
                 new_args += (arg2val_map[arg_node][input_nodes].to(self._device),)
             elif isinstance(arg2val_map[arg_node], DGLHeteroGraph):
-                new_args += (inference_graph.int().to(self._device),)
+                new_args += (inference_graph.to(self._device),)
             elif hasattr(arg2val_map[arg_node], "to"):
                 new_args += (arg2val_map[arg_node].to(self._device),)
             else:
@@ -85,12 +40,12 @@ class InferenceHelper(nn.Module):
 
     def _trace_output_shape(self, arg2val_map):
         ret_shapes = [[] for _ in range(self._schema.layers_count)]
-        for layer in self._schema.layers:
+        for layer, func in zip(self._schema.layers, self._funcs):
             new_args = self._get_new_arg_input(layer.inputs, arg2val_map, [0], dgl.graph((torch.tensor([0]), torch.tensor([0]))))
 
-            func = getattr(self, FORWARD_CONV + str(layer.id))
             output_vals = func(*new_args)
-            output_vals = (output_vals,) if not isinstance(output_vals, tuple) else output_vals
+            if not isinstance(output_vals, tuple):
+                output_vals = (output_vals,)
             if len(output_vals) != len(layer.outputs):
                 raise Exception("output values not match with layer's output.")
             for val, arg_node in zip(output_vals, layer.outputs):
@@ -110,7 +65,7 @@ class InferenceHelper(nn.Module):
             arg2val_map[arg_node] = val
         ret_shapes = self._trace_output_shape(arg2val_map)
 
-        for layer in self._schema.layers:
+        for layer, func in zip(self._schema.layers, self._funcs):
             sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
             dataloader = dgl.dataloading.NodeDataLoader(
                 inference_graph,
@@ -131,7 +86,6 @@ class InferenceHelper(nn.Module):
             for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
                 new_args = self._get_new_arg_input(layer.inputs, arg2val_map, input_nodes, blocks[0])
 
-                func = getattr(self, FORWARD_CONV + str(layer.id))
                 output_vals = func(*new_args)
                 del new_args
 

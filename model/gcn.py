@@ -19,9 +19,9 @@ class StochasticTwoLayerGCN(nn.Module):
         x_dst0 = x0[:blocks[0].number_of_dst_nodes()]
         x1 = F.relu(self.conv1(blocks[0], (x0, x_dst0)))
         x_dst1 = x1[:blocks[1].number_of_dst_nodes()]
-        x2 = F.relu(self.conv2(blocks[1], (x1 + x0.mean()*0.1, x_dst1)))
+        x2 = F.relu(self.conv2(blocks[1], (x1, x_dst1)))
         x_dst2 = x2[:blocks[2].number_of_dst_nodes()]
-        x3 = F.relu(self.conv3(blocks[2], (x2 + x1.mean()*0.1 + x0.mean()*0.1, x_dst2)))
+        x3 = F.relu(self.conv3(blocks[2], (x2, x_dst2)))
         return x3
 
     def inference(self, g, batch_size, device, x):

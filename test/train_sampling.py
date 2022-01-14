@@ -35,7 +35,7 @@ def evaluate(model, g, nfeat, labels, val_nid, device):
         t = time.time()
         print("start CPU:", psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024, "MB")
         print("start GPU:", th.cuda.max_memory_allocated() / 1024 / 1024, "MB")
-        
+
         helper = InferenceHelper(model, args.batch_size, device)
         pred = helper.inference(g, nfeat)
 

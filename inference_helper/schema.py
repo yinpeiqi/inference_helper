@@ -43,8 +43,8 @@ class Schema():
             self.record_input(name)
 
     def record_output(self, name):
-        # if name in self.name2arg_map:
-        #     raise RuntimeError("The output name is used before!")
+        if name in self.name2arg_map:
+            raise RuntimeError("The output name is used before!")
         output_arg = ArgNode(name, self.curr_layer)
         self.name2arg_map[name] = output_arg
         self.curr_layer.add_output(output_arg)
