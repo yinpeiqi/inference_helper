@@ -1,5 +1,5 @@
 from .utils import arg_trace
-from .constants import CALL_MODULE, PLACEHOLDER
+from .constants import CALL_MODULE, PLACEHOLDER, CALL_METHOD
 
 
 class SplitPlanGenerator():
@@ -27,16 +27,19 @@ class SplitPlanGenerator():
         blocks_name = None
         layer_nodes = []
         node_status = [[NodeStatus(0, 0, [])]]
+        can_append = True
         for lineno, node in enumerate(self.node_list):
-            if len(layer_nodes) > 0:
+            if len(layer_nodes) > 0 and can_append:
                 layer_nodes[-1].append(lineno)
-            if node.op == CALL_MODULE and blocks_name in arg_trace(node.args):
+            if node.op == CALL_METHOD and blocks_name in arg_trace(node.args):
+                can_append = False
+            elif node.op == CALL_MODULE and blocks_name in arg_trace(node.args):
                 layer_nodes.append([])
-            if node.op == PLACEHOLDER:
+                can_append = True
+            elif node.op == PLACEHOLDER:
                 node_status[0][0].lineno = lineno + 1
                 if blocks_name is None:
                     blocks_name = node.name
-
         if len(layer_nodes) <= 1:
             return []
         layer_nodes[-1] = [len(self.node_list) - 1]
