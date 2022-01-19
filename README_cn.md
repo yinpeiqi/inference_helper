@@ -28,7 +28,7 @@ pred = helper.inference(g, nfeat)
 ![avatar](resources/overview.png)
 inference_helper主要包括两个部分：Spliter和Inferencer。输入一个pytorch的模块，Spliter首先会trace这个模块的forward函数。然后将这个forward切割成数个消息传递层，并生成一个记录输入输出的schema。在做推理的时候，输入数据会被送到inferencer里。Inferencer会先用Spliter生成的schema跟卷积层函数计算得出每一个计算过程中每一个需要存到CPU里的张量的维度信息。接下来，就会根据预先计算生成的维度信息，schema以及消息传递层函数来一层一层地进行推理。
 
-### Spliter
+### 切分器 (Spliter)
 Spliter中主要的功能如下：
 1. 使用torch.fx将输入的forward转成计算图并做相应变换。
 2. 对于生成的计算图，将其按层切割得到数个子计算图，并将输入输出信息记录在schema里。
@@ -114,4 +114,15 @@ def forward_conv1(self, graph, conv1):
 ```
 生成计算图后，我们会用torch.fx的lint工具检查这些子计算图是否合法，若合法则使用torch.fx生成python代码。生成的代码为字符串变量，我们会使用python的exec将其重新编译为函数。至此，spliter的工作完成。
 
-### Inferencer
+### 推理器 (Inferencer)
+在此模块，用户需要将forward函数的所有输入参数传入inferencer中。Inferencer将进行两步操作：
+1. 根据Spliter生成的schema和消息传递层函数以及输入的张量维度，计算得出所有中间张量的维度信息并保存，用于接下来的推理。
+2. 基于以上得到的信息，一层一层地进行推理，输出结果。
+
+得到输入后，我们将生成一个只包含一个节点，一条边的图，并尝试用该图进行推理。在这里我们对于每一层，只进行一次推理操作。我们只将得到的张量结果的维度信息保存。
+
+接下来，我们根据生成的schema以及张量维度信息进行推理。我们在将对于每一层分别枚举节点，进行mini-batch训练。最终返回输出结果。
+## 代码实现
+TODO
+## 优化
+TODO
