@@ -34,7 +34,7 @@ class FunctionGenerator(nn.Module):
             print("----------------------------------------")
 
         self.schema = Schema()
-        self.schema.record_first_layer_input(traced.graph)
+        self.schema.record_inputs_and_outputs(traced.graph)
         GraphRewriter.blocks_to_graph(traced.graph)
         GraphRewriter.remove_unused_nodes(traced.graph)
         traced.recompile()

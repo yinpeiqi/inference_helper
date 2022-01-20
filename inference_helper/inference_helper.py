@@ -1,12 +1,9 @@
-import types
-
 import dgl
 import torch
 import torch.nn as nn
 from dgl import DGLHeteroGraph
 import tqdm
 
-from .constants import FORWARD_CONV
 from .function_generator import FunctionGenerator
 
 
@@ -103,6 +100,10 @@ class InferenceHelper():
             for ret, arg_node in zip(rets, layer.outputs):
                 arg2val_map[arg_node] = ret
 
-        if len(rets) == 1:
-            return rets[0]
-        return tuple(rets)
+        outputs = ()
+        for name in self._schema.last_layer_output:
+            arg_node = self._schema.name2arg_map[name]
+            outputs += (arg2val_map[arg_node],)
+        if len(outputs) == 1:
+            return outputs[0]
+        return tuple(outputs)

@@ -29,7 +29,9 @@ class GraphSpliter():
             if n.op == PLACEHOLDER:
                 curr_graph.insert_input(n.name)
             elif n.op == OUTPUT:
-                curr_graph.insert_output(n.args)
+                curr_inputs, curr_outputs = node_iterator.get_curr_input_and_output()
+                output_nodes = [curr_graph.env[node_name] for node_name in curr_outputs]
+                curr_graph.insert_output(output_nodes)
             else:
                 curr_graph.insert_node_copy(n)
 

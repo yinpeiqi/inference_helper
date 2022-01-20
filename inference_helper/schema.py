@@ -9,13 +9,16 @@ class Schema():
         self.name2arg_map = {}
         self.blocks_name = None
         self.first_layer_input = []
+        self.last_layer_output = []
 
-    def record_first_layer_input(self, origin_graph):
+    def record_inputs_and_outputs(self, origin_graph):
         for node in origin_graph.nodes:
             if node.op == PLACEHOLDER:
                 self.first_layer_input.append(node.name)
-            else:
-                break
+            if node.op == OUTPUT:
+                output_names = arg_trace(node.args)
+                for name in output_names:
+                    self.last_layer_output.append(name)
 
     def create_layer(self, graph):
         self.layers.append(GraphLayer(self))
