@@ -2,6 +2,33 @@
 # 问题定义
 In order to support GNN full neighbour sampling inference, we need to compute the features layer by layer. So first, we will split the forward function to several convolution functions. 
 
+We show a simple case below. In this case, we can easily found that we can handle this problem by split the computation graph between conv0 and conv1.
+It is obvious that:
+1. The graph is Directed Acyclic Graph.
+2. The graph contains several message passing nodes.
+
+At first, the tensor value is the input $x_0$, which do not contains much information. After it encounter a message passing module, the output tensor contains richer information according to the input graph. We defined $d_i$ as how many massage passing module the tensor encountered. E.g., in the upper computation graph, $d_{x_0}=0$; $d_{conv_0}=1$; $d_{relu}=1$; $d_{conv_1}=2$... and so on. 
+
+![avatar](resources/fig1.png)
+
+Here we simply think the computation graph is just like a linked list, but actually the relation of these nodes in the graph may contain residual. A node may no take inputs only from one node. We can't just consider how to cut a linked list, but to think about how to split a graph. We define that the inputs of node $i$ is $Input_i$, we may encounter the case that $d_i \ne d_j; i, j \in Input_i$. So we can compute $d_i$ as: 
+$$d_i=max(d_j, j \in Input_i)$$
+
+In the below computation graph, we can found that there is a formula $add=x_0+relu+relu_2$, while $d_{x_0}=0$, $d_{relu}=1$ and $d_{relu_2}=2$. In this case, we takes 
+$$d_{add}=max(d_{x0},d_{relu},d_{relu_2})=2$$
+
+![avatar](resources/fig2.png)
+
+We may also consider the cases which two message passing module takes the same inputs. This case actually is simliar to heterogenuous graph.
+
+Which means, there exists two message passing module $i$ and $j$ that $d_i=d_i$.
+
+![avatar](resources/fig3.png)
+
+![avatar](resources/to_hetero.svg)
+
+
+
 给定一个有向无环图$G$，图中的节点$v_i$分为普通节点$v_{Ci}$和消息传递节点$v_{MPi}$。每个节点$v_i$和每条边$e_i$都有两个属性，一个是颜色$c_{i}$，另一个是权重$p_i$。初始状态下所有的节点以及边的的颜色都为白色。
 
 我们可以对$G$做出以下操作：
