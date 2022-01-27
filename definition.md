@@ -11,8 +11,8 @@ At first, the tensor value is the input $x_0$, which do not contains much inform
 
 ![avatar](resources/fig1.png)
 
-Here we simply think the computation graph is just like a linked list, but actually the relation of these nodes in the graph may contain residual. A node may no take inputs only from one node. We can't just consider how to cut a linked list, but to think about how to split a graph. We define that the inputs of node $i$ is $Input_i$, we may encounter the case that $d_i \ne d_j; i, j \in Input_i$. So we can compute $d_i$ as: 
-$$d_i=max(d_j, j \in Input_i)$$
+Here we simply think the computation graph is just like a linked list, but actually the relation of these nodes in the graph may contain residual. A node may no take inputs only from one node. We can't just consider how to cut a linked list, but to think about how to split a graph. We define that the inputs of node $i$ is $Input_i$, we may encounter the case that $d_i \ne d_j; i,\ j \in Input_i$. So we can compute $d_i$ as: 
+$$d_i=max(d_j,\ j \in Input_i)$$
 
 In the below computation graph, we can found that there is a formula $add=x_0+relu+relu_2$, while $d_{x_0}=0$, $d_{relu}=1$ and $d_{relu_2}=2$. In this case, we takes 
 $$d_{add}=max(d_{x0},d_{relu},d_{relu_2})=2$$
@@ -25,9 +25,14 @@ Which means, there exists two message passing module $i$ and $j$ that $d_i=d_i$.
 
 ![avatar](resources/fig3.png)
 
-![avatar](resources/to_hetero.svg)
+![avatar](resources/to_hetero.png)
 
-
+We can turn this question into a more formulaic formulation. First, we transform the forward function to a operator dependency graph. The property of the graph is:
+1. The graph is a directed acyclic graph
+2. There are several message passing module nodes in the graph, we annotated them as $MP$.
+3. Each node in the graph have a message passing degree $d_i$.
+4. $d_i=max(d_j,\ j \in Input_i) + (i \in MP\ ?\ 1\ :\ 0)$.
+5. We can split the graph where $d_i > d_j,\ j\in Input_i$.
 
 给定一个有向无环图$G$，图中的节点$v_i$分为普通节点$v_{Ci}$和消息传递节点$v_{MPi}$。每个节点$v_i$和每条边$e_i$都有两个属性，一个是颜色$c_{i}$，另一个是权重$p_i$。初始状态下所有的节点以及边的的颜色都为白色。
 
