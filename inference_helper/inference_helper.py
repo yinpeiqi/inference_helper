@@ -5,7 +5,7 @@ from dgl import DGLHeteroGraph
 import tqdm
 
 from .function_generator import FunctionGenerator
-
+from .utils import get_new_arg_input
 
 class InferenceHelper():
     def __init__(self, module: nn.Module, batch_size, device, num_workers = 4, debug = False):
@@ -17,23 +17,11 @@ class InferenceHelper():
         self._schema = self._function_generator.get_schema()
         self._funcs = self._function_generator.get_funcs()
 
-    def _get_new_arg_input(self, inputs, arg2val_map, input_nodes, inference_graph):
-        new_args = ()
-        for arg_node in inputs:
-            if isinstance(arg2val_map[arg_node], torch.Tensor):
-                new_args += (arg2val_map[arg_node][input_nodes].to(self._device),)
-            elif isinstance(arg2val_map[arg_node], DGLHeteroGraph):
-                new_args += (inference_graph.to(self._device),)
-            elif hasattr(arg2val_map[arg_node], "to"):
-                new_args += (arg2val_map[arg_node].to(self._device),)
-            else:
-                new_args += (arg2val_map[arg_node],)
-        return new_args
-
     def _trace_output_shape(self, arg2val_map):
         ret_shapes = [[] for _ in range(self._schema.layers_count)]
         for layer, func in zip(self._schema.layers, self._funcs):
-            new_args = self._get_new_arg_input(layer.inputs, arg2val_map, [0], dgl.graph((torch.tensor([0]), torch.tensor([0]))))
+            fake_graph = dgl.graph((torch.tensor([0]), torch.tensor([0])))
+            new_args = get_new_arg_input(layer.inputs, arg2val_map, [0], fake_graph, self._device)
 
             output_vals = func(*new_args)
             if not isinstance(output_vals, tuple):
@@ -76,7 +64,7 @@ class InferenceHelper():
                 )
 
             for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
-                new_args = self._get_new_arg_input(layer.inputs, arg2val_map, input_nodes, blocks[0])
+                new_args = get_new_arg_input(layer.inputs, arg2val_map, input_nodes, blocks[0], self._device)
 
                 output_vals = func(*new_args)
                 del new_args
