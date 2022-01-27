@@ -1,4 +1,5 @@
 from .utils import arg_trace
+from .node_relation import NodeRelation
 from .constants import CALL_MODULE, PLACEHOLDER, CALL_METHOD
 
 
@@ -9,19 +10,6 @@ class SplitPlanGenerator():
 
     def get_split_plan(self):
         return self.plan
-
-    def get_node_relation(self):
-        name2lineno_map = {}
-        node_relation = [None for _ in range(len(self.node_list))]
-        for lineno, node in enumerate(self.node_list):
-            name2lineno_map[node.name] = lineno
-            node_relation[lineno] = NodeRelation(lineno)
-            used_args = arg_trace(node.args)
-            used_linenos = [name2lineno_map[arg] for arg in used_args]
-            for used_lineno in used_linenos:
-                node_relation[used_lineno].set_be_used(lineno)
-                node_relation[lineno].set_use(used_lineno)
-        return node_relation
 
     def generate_split_linenos(self):
         blocks_name = None
@@ -44,7 +32,7 @@ class SplitPlanGenerator():
             return []
         layer_nodes[-1] = [len(self.node_list) - 1]
 
-        node_relation = self.get_node_relation()
+        node_relation = NodeRelation.get_node_relation(self.node_list)
         for layer_id, layer in enumerate(layer_nodes):
             node_status.append([])
             for node_lineno in layer:
@@ -78,18 +66,3 @@ class NodeStatus:
 
     def __str__(self):
         return "{}: {}; {}".format(self.lineno, self.plan, self.cost)
-
-class NodeRelation:
-    def __init__(self, lineno):
-        self.lineno = lineno
-        self.use = []
-        self.be_used = -1
-
-    def set_use(self, use):
-        self.use.append(use)
-
-    def set_be_used(self, be_used):
-        self.be_used = max(self.be_used, be_used)
-
-    def __str__(self):
-        return "{}: {}; {}".format(self.lineno, self.use, self.be_used)

@@ -11,6 +11,7 @@ from .schema import Schema
 from .tracer import ProhibitCallModuleTracer
 from .utils import inference_helper_getattr
 from .graph_rewriter import GraphRewriter
+from .graph_rearranger import GraphRearranger
 from .constants import FORWARD_CONV
 
 
@@ -43,6 +44,9 @@ class FunctionGenerator(nn.Module):
             print("------- Modified forward function ------")
             print(traced.code.strip())
             print("----------------------------------------")
+
+        rearranger = GraphRearranger(traced)
+        rearranger.rearrange()
 
         spliter = GraphSpliter(traced.graph.nodes)
         planner = SplitPlanGenerator(traced.graph.nodes)
