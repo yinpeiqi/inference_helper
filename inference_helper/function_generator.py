@@ -44,9 +44,10 @@ class FunctionGenerator(nn.Module):
             print(traced.code.strip())
             print("----------------------------------------")
 
-        spliter = GraphSpliter(traced.graph.nodes)
         planner = SplitPlanGenerator(traced.graph.nodes)
         split_linenos = planner.get_split_plan()
+        
+        spliter = GraphSpliter(traced.graph.nodes)
         graphs_list = spliter.split_graph(split_linenos)
 
         for layer_id, graph in enumerate(graphs_list):
