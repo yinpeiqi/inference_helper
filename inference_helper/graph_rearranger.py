@@ -1,4 +1,4 @@
-from torch.fx import GraphModule, Graph, Node
+from torch.fx import GraphModule, Graph
 
 from .utils import arg_trace
 from .node_relation import NodeRelation
@@ -95,7 +95,7 @@ class GraphRearranger():
                 curr_edge = (node_relation[src_lineno].be_used[0], src_lineno)
             for lineno in path:
                 lineno2node_map[lineno].message_degree = message_layer
-    
+
     def generate_new_graph(self, node_relation, lineno2node_map):
         new_graph = Graph()
         message_layers = [[] for _ in range(self.output.message_degree + 1)]
