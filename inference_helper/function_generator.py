@@ -47,10 +47,9 @@ class FunctionGenerator(nn.Module):
 
         rearranger = GraphRearranger(traced)
         rearranger.rearrange()
+        split_linenos = rearranger.get_split_points()
 
         spliter = GraphSpliter(traced.graph.nodes)
-        planner = SplitPlanGenerator(traced.graph.nodes)
-        split_linenos = planner.get_split_plan()
         graphs_list = spliter.split_graph(split_linenos)
 
         for layer_id, graph in enumerate(graphs_list):

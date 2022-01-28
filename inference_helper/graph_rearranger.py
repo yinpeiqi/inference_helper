@@ -10,6 +10,7 @@ class GraphRearranger():
         self.traced = traced
         self.output = None
         self.inputs = []
+        self.split_points = []
 
     def tagging_node(self, lineno, node):
         node.lineno = lineno
@@ -83,14 +84,45 @@ class GraphRearranger():
 
         for edge in passing_edges:
             curr_edge = edge
+            path = []
+            message_layer = lineno2node_map[curr_edge[1]].message_degree
             while True:
                 src_lineno, dst_lineno = curr_edge
+                path.append(dst_lineno)
                 if len(node_relation[src_lineno].be_used) != 1 or \
                     lineno2node_map[src_lineno].is_message or lineno2node_map[src_lineno].is_input:
-                    lineno2node_map[src_lineno].split_points.append(dst_lineno)
                     break
                 curr_edge = (node_relation[src_lineno].be_used[0], src_lineno)
-        
+            for lineno in path:
+                lineno2node_map[lineno].message_degree = message_layer
+    
+    def generate_new_graph(self, node_relation, lineno2node_map):
+        new_graph = Graph()
+        message_layers = [[] for _ in range(self.output.message_degree + 1)]
+        travel = [0 for _ in self.traced.graph.nodes]
+        for node in self.traced.graph.nodes:
+            if node.op == PLACEHOLDER:
+                message_layers[0].append(node)
+
+        curr_lineno = 0
+        for i, layer in enumerate(message_layers):
+            for node in layer:
+                for lineno in node_relation[node.lineno].be_used:
+                    travel[lineno] += 1
+                    if travel[lineno] == len(node_relation[lineno].use):
+                        next_node = lineno2node_map[lineno]
+                        message_layers[next_node.message_degree].append(next_node)
+                new_node = new_graph.create_node(node.op, node.target, node.args, node.kwargs, node.name)
+                new_node.message_degree = node.message_degree
+                curr_lineno += 1
+            if i != 0 and i != self.output.message_degree:
+                self.split_points.append(curr_lineno)
+        # new_graph.lint()
+        self.traced.graph = new_graph
+
+    def get_split_points(self):
+        return self.split_points
+
     def rearrange(self):
         node_relation = NodeRelation.get_node_relation(self.traced.graph.nodes)
         lineno2node_map = self.get_lineno2node_map()
@@ -100,6 +132,4 @@ class GraphRearranger():
         
         self.compute_split_points(node_relation, lineno2node_map)
 
-        for node in self.traced.graph.nodes:
-            print(node.lineno, node.name, node.message_degree, node.split_points)
-        #TODO: refactor the graph
+        self.generate_new_graph(node_relation, lineno2node_map)
