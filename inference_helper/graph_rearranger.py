@@ -2,6 +2,7 @@ from torch.fx import GraphModule, Graph
 
 from .utils import arg_trace
 from .node_relation import NodeRelation
+from .graph_replicator import GraphReplicator
 from .constants import CALL_METHOD, CALL_MODULE, OUTPUT, PLACEHOLDER
 
 
@@ -10,7 +11,7 @@ class GraphRearranger():
         self.traced = traced
         self.output = None
         self.inputs = []
-        self.split_points = []
+        self.graphs_list = []
 
     def tagging_node(self, lineno, node):
         node.lineno = lineno
@@ -95,33 +96,40 @@ class GraphRearranger():
                 curr_edge = (node_relation[src_lineno].be_used[0], src_lineno)
             for lineno in path:
                 lineno2node_map[lineno].message_degree = message_layer
+        self.output.message_degree += 1
 
-    def generate_new_graph(self, node_relation, lineno2node_map):
-        new_graph = Graph()
+    def generate_new_graphs(self, node_relation, lineno2node_map):
         message_layers = [[] for _ in range(self.output.message_degree + 1)]
+        layers_input = [set() for _ in range(self.output.message_degree + 1)]
+        layers_output = [set() for _ in range(self.output.message_degree + 1)]
         travel = [0 for _ in self.traced.graph.nodes]
         for node in self.traced.graph.nodes:
             if node.op == PLACEHOLDER:
                 message_layers[0].append(node)
 
-        curr_lineno = 0
         for i, layer in enumerate(message_layers):
             for node in layer:
                 for lineno in node_relation[node.lineno].be_used:
                     travel[lineno] += 1
+                    next_node = lineno2node_map[lineno]
+                    if i != next_node.message_degree:
+                        layers_input[next_node.message_degree].add(node)
+                        layers_output[i].add(node)
                     if travel[lineno] == len(node_relation[lineno].use):
-                        next_node = lineno2node_map[lineno]
                         message_layers[next_node.message_degree].append(next_node)
-                new_node = new_graph.create_node(node.op, node.target, node.args, node.kwargs, node.name)
-                new_node.message_degree = node.message_degree
-                curr_lineno += 1
-            if i != 0 and i != self.output.message_degree:
-                self.split_points.append(curr_lineno)
-        # new_graph.lint()
-        self.traced.graph = new_graph
+        
+        for i, (inputs, nodes, outputs) in enumerate(zip(layers_input, message_layers, layers_output)):
+            curr_graph = GraphReplicator()
+            for input_node in inputs:
+                curr_graph.insert_input(input_node.name)
+            for node in nodes:
+                curr_graph.insert_node_copy(node)
+            curr_graph.insert_output(outputs)
+            curr_graph.lint()
+            self.graphs_list.append(curr_graph)
 
-    def get_split_points(self):
-        return self.split_points
+    def get_splited_graphs(self):
+        return self.graphs_list[1:-1]
 
     def rearrange(self):
         node_relation = NodeRelation.get_node_relation(self.traced.graph.nodes)
@@ -132,4 +140,4 @@ class GraphRearranger():
         
         self.compute_split_points(node_relation, lineno2node_map)
 
-        self.generate_new_graph(node_relation, lineno2node_map)
+        self.generate_new_graphs(node_relation, lineno2node_map)

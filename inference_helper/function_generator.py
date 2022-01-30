@@ -46,10 +46,7 @@ class FunctionGenerator(nn.Module):
 
         rearranger = GraphRearranger(traced)
         rearranger.rearrange()
-        split_linenos = rearranger.get_split_points()
-
-        spliter = GraphSpliter(traced.graph.nodes)
-        graphs_list = spliter.split_graph(split_linenos)
+        graphs_list = rearranger.get_splited_graphs()
 
         for layer_id, graph in enumerate(graphs_list):
             GraphRewriter.remove_unused_nodes(graph)
