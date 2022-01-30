@@ -5,7 +5,6 @@ import torch
 import torch.nn as nn
 from torch.fx import GraphModule, Graph
 
-from .graph_spliter import GraphSpliter
 from .schema import Schema
 from .tracer import ProhibitCallModuleTracer
 from .utils import inference_helper_getattr
