@@ -1,7 +1,6 @@
 import dgl
 import torch
 import torch.nn as nn
-from dgl import DGLHeteroGraph
 import tqdm
 
 from .function_generator import FunctionGenerator

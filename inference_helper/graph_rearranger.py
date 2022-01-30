@@ -1,4 +1,4 @@
-from torch.fx import GraphModule, Graph
+from torch.fx import GraphModule
 
 from .utils import arg_trace
 from .node_relation import NodeRelation
