@@ -213,9 +213,14 @@ $$d_i=max(d_j,\ j \in Input_i) + (i \in Message Pssing\ ?\ 1\ :\ 0)$$
 ![avatar](resources/fig3.png)
 ![avatar](resources/fig3-3.png)
 
-3. Heterogenous Graph Model
+3. 异构图模型
 
 ![avatar](resources/to_hetero.png)
+
+在生成的依赖图中，所有$d_i \ne d_j;\ j \in Input_i$的地方都代表这里需要被切割。然而这种切分方法不一定是最小化输入输出的切割策略。由于我们推理采用的是全邻居推理，因此对于一个节点的输出，输出的总大小为$V$，即为所有的节点数量。输入的总大小为$E$，即为所有的边的数量。我们用$t_i$表示节点$i$属于第$t_i$个子图。计算$t_i$的算法如下：
+1. $t_i=d_i$
+2. 找到graph method的节点$m$，并找到该节点被用在哪个消息传递节点$mp$，使得所有在$m$与$mp$路径中的点$p$，$t_p=t_{mp}$。
+3. 找到$t_i \ne t_j;\ j \in Input_i$的点，使其往父节点进行搜索，直至：1. $i$包含多个父节点；2. 父节点为输入节点或消息传递节点；3. 父节点$p$中存在$t_i \ne t_j;\ p \in Input_i,\ p \in Input_j$。更改路径上的点的$t$值为起始点$t$值。
 
 ## 代码实现
 TODO
