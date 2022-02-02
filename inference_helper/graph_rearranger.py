@@ -90,10 +90,18 @@ class GraphRearranger():
             while True:
                 src_lineno, dst_lineno = curr_edge
                 path.append(dst_lineno)
-                if len(node_relation[src_lineno].be_used) != 1 or \
+                if len(node_relation[src_lineno].use) != 1 or\
                     lineno2node_map[src_lineno].is_message or lineno2node_map[src_lineno].is_input:
                     break
-                curr_edge = (node_relation[src_lineno].be_used[0], src_lineno)
+                if len(node_relation[src_lineno].be_used) != 1:
+                    is_same_source = True
+                    for be_used in node_relation[src_lineno].be_used:
+                        if be_used != dst_lineno and\
+                            lineno2node_map[be_used].message_degree != message_layer:
+                            is_same_source = False
+                    if not is_same_source:
+                        break
+                curr_edge = (node_relation[src_lineno].use[0], src_lineno)
             for lineno in path:
                 lineno2node_map[lineno].message_degree = message_layer
         self.output.message_degree += 1
