@@ -141,3 +141,5 @@ class GraphRearranger():
         self.compute_split_points(node_relation, lineno2node_map)
 
         self.generate_new_graphs(node_relation, lineno2node_map)
+
+        # NodeRelation.print_node_relation(self.traced.graph.nodes)
