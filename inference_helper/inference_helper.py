@@ -34,6 +34,43 @@ class InferenceHelper():
                 ret_shapes[layer.id].append(val.size()[1:])
         return ret_shapes
 
+    # override here
+    def compute(self, inference_graph, ret_shapes, arg2val_map, layer, func):
+        sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
+        dataloader = dgl.dataloading.NodeDataLoader(
+            inference_graph,
+            torch.arange(inference_graph.number_of_nodes()).to(inference_graph.device),
+            sampler,
+            batch_size=self._batch_size,
+            device=self._device if self._num_workers == 0 else None,
+            shuffle=False,
+            drop_last=False,
+            num_workers=self._num_workers)
+
+        rets = []
+        for j, _ in enumerate(layer.outputs):
+            rets.append(
+                torch.zeros((inference_graph.number_of_nodes(),) + tuple(ret_shapes[layer.id][j]))
+            )
+
+        for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
+            new_args = get_new_arg_input(layer.inputs, arg2val_map, input_nodes, blocks[0], self._device)
+
+            output_vals = func(*new_args)
+            del new_args
+
+            if not isinstance(output_vals, tuple):
+                output_vals = (output_vals,)
+            for output_val, ret in zip(output_vals, rets):
+                if isinstance(output_val, torch.Tensor):
+                    if output_val.size()[0] == blocks[0].num_dst_nodes():
+                        ret[output_nodes] = output_val.cpu()
+                    elif output_val.size()[0] == blocks[0].num_src_nodes():
+                        ret[input_nodes] = output_val.cpu()
+                    else:
+                        raise RuntimeError("Can't determine return's type.")
+        return rets
+
     def inference(self, inference_graph, *args):
         first_layer_inputs = (inference_graph,) + tuple(args)
         if len(first_layer_inputs) != len(self._schema.first_layer_input):
@@ -45,39 +82,8 @@ class InferenceHelper():
         ret_shapes = self._trace_output_shape(arg2val_map)
 
         for layer, func in zip(self._schema.layers, self._funcs):
-            sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
-            dataloader = dgl.dataloading.NodeDataLoader(
-                inference_graph,
-                torch.arange(inference_graph.number_of_nodes()).to(inference_graph.device),
-                sampler,
-                batch_size=self._batch_size,
-                device=self._device if self._num_workers == 0 else None,
-                shuffle=False,
-                drop_last=False,
-                num_workers=self._num_workers)
-
-            rets = []
-            for j, _ in enumerate(layer.outputs):
-                rets.append(
-                    torch.zeros((inference_graph.number_of_nodes(),) + tuple(ret_shapes[layer.id][j]))
-                )
-
-            for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
-                new_args = get_new_arg_input(layer.inputs, arg2val_map, input_nodes, blocks[0], self._device)
-
-                output_vals = func(*new_args)
-                del new_args
-
-                if not isinstance(output_vals, tuple):
-                    output_vals = (output_vals,)
-                for output_val, ret in zip(output_vals, rets):
-                    if isinstance(output_val, torch.Tensor):
-                        if output_val.size()[0] == blocks[0].num_dst_nodes():
-                            ret[output_nodes] = output_val.cpu()
-                        elif output_val.size()[0] == blocks[0].num_src_nodes():
-                            ret[input_nodes] = output_val.cpu()
-                        else:
-                            raise RuntimeError("Can't determine return's type.")
+            
+            rets = self.compute(inference_graph, ret_shapes, arg2val_map, layer, func)
 
             # delete intermediate val
             for arg_node in layer.inputs:
