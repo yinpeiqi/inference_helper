@@ -21,7 +21,8 @@ class InferenceHelperBase():
         ret_shapes = [[] for _ in range(self._schema.layers_count)]
         for layer, func in zip(self._schema.layers, self._funcs):
             fake_graph = dgl.graph((torch.tensor([0]), torch.tensor([0])))
-            new_args = get_new_arg_input(layer.inputs, arg2val_map, [0], fake_graph, self._device)
+            device = self._device if not isinstance(self._device, list) else self._device[0]
+            new_args = get_new_arg_input(layer.inputs, arg2val_map, [0], fake_graph, device)
 
             output_vals = func(*new_args)
             if not isinstance(output_vals, tuple):
@@ -35,7 +36,7 @@ class InferenceHelperBase():
                 ret_shapes[layer.id].append(val.size()[1:])
         return ret_shapes
 
-    def compute(self, inference_graph, ret_shapes, arg2val_map, layer, func):
+    def compute(self, inference_graph, rets, arg2val_map, layer, func):
         raise NotImplementedError()
 
     def inference(self, inference_graph, *args):
