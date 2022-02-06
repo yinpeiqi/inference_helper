@@ -76,11 +76,11 @@ class InferenceHelperBase():
 
 
 class InferenceHelper(InferenceHelperBase):
-    def compute(self, inference_graph, rets, arg2val_map, layer, func):
+    def compute(self, graph, rets, arg2val_map, layer, func):
         sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
         dataloader = dgl.dataloading.NodeDataLoader(
-            inference_graph,
-            torch.arange(inference_graph.number_of_nodes()).to(inference_graph.device),
+            graph,
+            torch.arange(graph.number_of_nodes()).to(graph.device),
             sampler,
             batch_size=self._batch_size,
             device=self._device if self._num_workers == 0 else None,
