@@ -38,8 +38,9 @@ class StochasticTwoLayerGCN(nn.Module):
             dataloader = dgl.dataloading.NodeDataLoader(
                 g, torch.arange(g.number_of_nodes()), sampler,
                 batch_size=batch_size,
-                shuffle=False,
-                drop_last=False)
+                shuffle=True,
+                drop_last=False,
+                num_workers=4)
 
             # Within a layer, iterate over nodes in batches
             for input_nodes, output_nodes, blocks in dataloader:
