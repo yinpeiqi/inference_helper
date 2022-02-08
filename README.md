@@ -237,7 +237,7 @@ $$d_i=max(d_j,\ j \in Input_i) + (i \in Message Pssing\ ?\ 1\ :\ 0)$$
 
 *问题定义*
 
-每个算子有三个属性：func_id 表示该算子属于第几个函数；input size表示该算子的输入数据量；output size表示该算子的输出数据量。其中，input size 和 output size 只能是edge size 或者 vertex size。
+每个算子有三个属性：func_id 表示该算子属于第几个函数；input size表示该算子的输入数据量；output size表示该算子的输出数据量。其中，input size 和 output size 只能是edge size 或者 vertex size。一个V的输出与一个E的输入连接表示这里需要途径CPU。
 
 有五种算子：
 1. 输入算子：这种算子没有输入
@@ -252,3 +252,6 @@ $$d_i=max(d_j,\ j \in Input_i) + (i \in Message Pssing\ ?\ 1\ :\ 0)$$
 3. computation_cost(op) = input size * channel * cost for this op
 
 我们的目标是使所有算子的开销之和尽可能小。
+
+算法：
+我们首先将所有算子的func_id设为该算子的message degree，将消息传递算子的输入设为E，其余所有节点的输入输出都设为V。这样的表示为，只有在消息传递算子之前我们才做切割。我们如果把一个io size为V的算子更改为E，这里会产生一个计算开销膨胀。当前这种形式避免了所有的计算开销膨胀。因此，现存的所有更改都一定会增加计算开销。所以当前有可能减少总开销的办法为：减少读入开销和写出开销。当一个算子被多个算子所使用时，将该算子作为一个要保存到CPU的点可能会降低总开销。因此，我们枚举这些算子，对比将这些算子作为保存点的总开销跟当前最小总开销，采取更小开销的措施。
