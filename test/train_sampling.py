@@ -34,14 +34,16 @@ def evaluate(model, g, nfeat, labels, val_nid, device):
     with th.no_grad():
         t = time.time()
         print("start CPU:", psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024, "MB")
+        print("start CPU percent:", psutil.cpu_percent())
         print("start GPU:", th.cuda.max_memory_allocated() / 1024 / 1024, "MB")
 
-        helper = InferenceHelper(model, args.batch_size, device)
-        pred = helper.inference(g, nfeat)
+        # helper = InferenceHelper(model, args.batch_size, device)
+        # pred = helper.inference(g, nfeat)
 
-        # pred = model.inference(g, nfeat, device, args.batch_size, args.num_workers)
+        pred = model.inference(g, nfeat, device, args.batch_size, 4)
 
         print("end CPU:", psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024, "MB")
+        print("end CPU percent:", psutil.cpu_percent())
         print("end GPU:", th.cuda.max_memory_allocated() / 1024 / 1024, "MB")
         print("time: ", time.time() - t)
     model.train()
@@ -129,8 +131,8 @@ def run(args, device, data):
         if epoch % args.eval_every == 0 and epoch != 0:
             eval_acc = evaluate(model, val_g, val_nfeat, val_labels, val_nid, device)
             print('Eval Acc {:.4f}'.format(eval_acc))
-            test_acc = evaluate(model, test_g, test_nfeat, test_labels, test_nid, device)
-            print('Test Acc: {:.4f}'.format(test_acc))
+            # test_acc = evaluate(model, test_g, test_nfeat, test_labels, test_nid, device)
+            # print('Test Acc: {:.4f}'.format(test_acc))
 
     # print('Avg epoch time: {}'.format(avg / (epoch - 4)))
 
@@ -139,7 +141,7 @@ if __name__ == '__main__':
     argparser.add_argument('--gpu', type=int, default=0,
                            help="GPU device ID. Use -1 for CPU training")
     argparser.add_argument('--dataset', type=str, default='reddit')
-    argparser.add_argument('--num-epochs', type=int, default=11)
+    argparser.add_argument('--num-epochs', type=int, default=6)
     argparser.add_argument('--num-hidden', type=int, default=16)
     argparser.add_argument('--num-layers', type=int, default=2)
     argparser.add_argument('--fan-out', type=str, default='10,25')

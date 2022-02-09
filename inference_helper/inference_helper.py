@@ -39,7 +39,11 @@ class InferenceHelperBase():
     def compute(self, inference_graph, rets, arg2val_map, layer, func):
         raise NotImplementedError()
 
+    def before_inference(self, graph, *args):
+        pass
+
     def inference(self, inference_graph, *args):
+        self.before_inference(inference_graph, *args)
         first_layer_inputs = (inference_graph,) + tuple(args)
         if len(first_layer_inputs) != len(self._schema.first_layer_input):
             raise Exception("layer's input not match with args.")

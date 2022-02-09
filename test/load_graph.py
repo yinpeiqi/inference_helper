@@ -9,6 +9,7 @@ def load_reddit():
     g = data[0]
     g.ndata['features'] = g.ndata['feat']
     g.ndata['labels'] = g.ndata['label']
+    print(g)
     return g, data.num_classes
 
 def load_ogb(name):
