@@ -40,7 +40,7 @@ def evaluate(model, g, nfeat, labels, val_nid, device):
         # helper = InferenceHelper(model, args.batch_size, device)
         # pred = helper.inference(g, nfeat)
 
-        pred = model.inference(g, nfeat, device, args.batch_size, 4)
+        pred = model.inference(g, nfeat, device, args.batch_size, 0)
 
         print("end CPU:", psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024, "MB")
         print("end CPU percent:", psutil.cpu_percent())
