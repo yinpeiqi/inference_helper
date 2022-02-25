@@ -6,7 +6,7 @@ import torch.nn as nn
 from torch.fx import GraphModule, Graph
 
 from .schema import Schema
-from .tracer import ProhibitCallModuleTracer
+from .tracer import DGLTracer
 from .utils import inference_helper_getattr
 from .graph_rewriter import GraphRewriter
 from .graph_rearranger import GraphRearranger
@@ -26,7 +26,7 @@ class FunctionGenerator(nn.Module):
         self.module_split(module)
 
     def module_split(self, module: nn.Module):
-        traced = GraphModule(module, ProhibitCallModuleTracer().trace(module))
+        traced = GraphModule(module, DGLTracer().trace(module))
         if self.debug:
             print("-------- Origin forward function -------")
             print(traced.code.strip())
