@@ -13,7 +13,7 @@ import dgl
 import time
 from dgl.data import CiteseerGraphDataset
 from inference_helper import InferenceHelper
-from inference_helper import symbolic_trace
+from inference_helper import dgl_symbolic_trace
 
 
 class GATConv(nn.Module):
@@ -209,10 +209,9 @@ def train():
         num_workers=4)
 
     model = GAT(3, in_feats, hidden_feature, num_classes, [2, 2, 2], F.relu, 0.5, 0.5, 0.5, 0.5)
-    model = symbolic_trace(model)
-    model.recompile()
-    print(model.graph)
-    print(model.code)
+    model = dgl_symbolic_trace(model)
+    # print(model.graph)
+    # print(model.code)
 
     model = model.cuda()
     opt = torch.optim.Adam(model.parameters())
@@ -230,12 +229,12 @@ def train():
             opt.step()
 
     with torch.no_grad():
-        st = time.time()
-        helper = InferenceHelper(model, 20, torch.device('cuda'), debug = True)
-        helper_pred = helper.inference(g, feat)
-        helper_score = (torch.argmax(helper_pred, dim=1) == labels).float().sum() / len(helper_pred)
-        cost_time = time.time() - st
-        print("Helper Inference: {}, inference time: {}".format(helper_score, cost_time))
+        # st = time.time()
+        # helper = InferenceHelper(model, 20, torch.device('cuda'), debug = True)
+        # helper_pred = helper.inference(g, feat)
+        # helper_score = (torch.argmax(helper_pred, dim=1) == labels).float().sum() / len(helper_pred)
+        # cost_time = time.time() - st
+        # print("Helper Inference: {}, inference time: {}".format(helper_score, cost_time))
         
         if hasattr(model, "inference"):
             st = time.time()

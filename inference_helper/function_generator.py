@@ -6,7 +6,7 @@ import torch.nn as nn
 from torch.fx import GraphModule, Graph
 
 from .schema import Schema
-from .tracer import DGLTracer
+from .dglfx import dgl_symbolic_trace
 from .graph_rewriter import GraphRewriter
 from .graph_rearranger import GraphRearranger
 from .constants import CONV_BLOCK
@@ -28,7 +28,7 @@ class FunctionGenerator(nn.Module):
         if isinstance(module, GraphModule):
             traced = module
         else:
-            traced = GraphModule(module, DGLTracer().trace(module))
+            traced = dgl_symbolic_trace(module)
 
         if self.debug:
             print("-------- Origin forward function -------")

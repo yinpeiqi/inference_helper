@@ -1,15 +1,14 @@
 import math
-import operator
-import builtins
 
 import torch
 import dgl.nn
 from torch.fx import Tracer, Proxy, Node, GraphModule
-from torch.fx.proxy import Attribute
 from torch.fx._compatibility import compatibility
 from dgl.nn.functional import edge_softmax
 from dgl.function.message import BinaryMessageFunction, CopyMessageFunction
 from dgl.function.reducer import SimpleReduceFunction
+
+from .proxy import DGLGraphProxy, DGLFunctionProxy, DGLGraphAttribute, DGLVoidCallProxy
 
 
 def is_dgl_function(target):
@@ -67,6 +66,10 @@ class DGLTracer(Tracer):
         return DGLGraphAttribute(node, self)
 
     @compatibility(is_backward_compatible=True)
+    def dgl_void_call(self, node: Node) -> "Proxy":
+        return DGLVoidCallProxy(node, self)
+
+    @compatibility(is_backward_compatible=True)
     def create_arg(self, a):
         if is_dgl_function(a):
             proxy = self.create_proxy(
@@ -81,69 +84,8 @@ class DGLTracer(Tracer):
         return super().is_leaf_module(m, module_qualified_name)
 
 
-class DGLGraphProxy(Proxy):
-    def __init__(self, node: Node, tracer: Tracer = None):
-        super().__init__(node, tracer)
-        node.node_type = "DGLGraph"
-
-    @property
-    def is_block(self):
-        return True
-
-    def local_var(self):
-        return self.tracer.create_proxy("call_method", "local_var", (self,), {}, 
-            proxy_factory_fn=self.tracer.dgl_graph_proxy)
-
-    def __getitem__(self, rhs):
-        return self.tracer.create_proxy("call_function", operator.getitem, (self, rhs), {}, 
-            proxy_factory_fn=self.tracer.dgl_graph_proxy)
-
-    # def apply_edges(self, *args, **kwargs):
-    #     print(*args, **kwargs)
-
-    @property
-    def srcdata(self):
-        return self.tracer.create_proxy("call_function", builtins.getattr, (self, "srcdata"), {},
-            proxy_factory_fn=self.tracer.dgl_graph_attribute)
-
-    @property
-    def dstdata(self):
-        return self.tracer.create_proxy("call_function", builtins.getattr, (self, "dstdata"), {},
-            proxy_factory_fn=self.tracer.dgl_graph_attribute)
-
-    @property
-    def ndata(self):
-        return self.tracer.create_proxy("call_function", builtins.getattr, (self, "ndata"), {},
-            proxy_factory_fn=self.tracer.dgl_graph_attribute)
-
-    @property
-    def edata(self):
-        return self.tracer.create_proxy("call_function", builtins.getattr, (self, "edata"), {},
-            proxy_factory_fn=self.tracer.dgl_graph_attribute)
-
-    def __str__(self):
-        return "Graph{}".format(super().__str__())
-
-
-class DGLGraphAttribute(Proxy):
-    @compatibility(is_backward_compatible=True)
-    def __init__(self, node: Node, tracer: Tracer = None):
-        super().__init__(node, tracer)
-        node.node_type = "DGLGraphAttribute"
-
-
-class DGLFunctionProxy(Proxy):
-    @compatibility(is_backward_compatible=True)
-    def __init__(self, node: Node, tracer: Tracer = None):
-        super().__init__(node, tracer)
-        node.node_type = "DGLFunction"
-
-    def __str__(self):
-        return "DGLFunction{}".format(super().__str__())
-
-
 @compatibility(is_backward_compatible=True)
-def symbolic_trace(root, concrete_args=None):
+def dgl_symbolic_trace(root, concrete_args=None):
     tracer = DGLTracer()
     graph = tracer.trace(root, concrete_args)
     name = root.__class__.__name__ if isinstance(root, torch.nn.Module) else root.__name__

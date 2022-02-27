@@ -1,2 +1,2 @@
 from .inference_helper import InferenceHelper
-from .tracer import symbolic_trace
+from .dglfx import dgl_symbolic_trace
