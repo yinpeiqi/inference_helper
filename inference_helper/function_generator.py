@@ -22,13 +22,14 @@ class FunctionGenerator(nn.Module):
             if hasattr(module, name):
                 attr = getattr(module, name)
                 setattr(self, name, attr)
+        self.module_split(module)
+
+    def module_split(self, module: nn.Module):
         if isinstance(module, GraphModule):
-            self.module_split(module)
+            traced = module
         else:
             traced = GraphModule(module, DGLTracer().trace(module))
-            self.module_split(traced)
 
-    def module_split(self, traced: GraphModule):
         if self.debug:
             print("-------- Origin forward function -------")
             print(traced.code.strip())

@@ -58,7 +58,6 @@ class DGLTracer(Tracer):
     @compatibility(is_backward_compatible=True)
     def create_arg(self, a):
         if is_dgl_function(a):
-            print(a)
             proxy = self.create_proxy(
                 "call_function", a.__class__, (), get_dgl_function_kwargs(a), a.name)
             return proxy.node
