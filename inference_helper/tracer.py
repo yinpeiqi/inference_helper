@@ -2,7 +2,7 @@ import math
 
 import torch
 import dgl.nn
-from torch.fx import Tracer, Proxy, Node
+from torch.fx import Tracer, Proxy, Node, GraphModule
 from torch.fx._compatibility import compatibility
 from dgl.nn.functional import edge_softmax
 from dgl.function.message import BinaryMessageFunction
@@ -54,7 +54,7 @@ class DGLGraphProxy(Proxy):
     @property
     def is_block(self):
         # TODO
-        raise NotImplementedError("")
+        return True
 
     def __str__(self):
         return "Graph{}".format(super().__str__())
@@ -62,3 +62,15 @@ class DGLGraphProxy(Proxy):
 class DGLFunctionProxy(Proxy):
     def __str__(self):
         return "DGLFunction{}".format(super().__str__())
+
+
+@compatibility(is_backward_compatible=True)
+def symbolic_trace(root, concrete_args=None):
+    tracer = DGLTracer()
+    graph = tracer.trace(root, concrete_args)
+    name = root.__class__.__name__ if isinstance(root, torch.nn.Module) else root.__name__
+    gm = GraphModule(tracer.root, graph, name)
+    for key in dir(root):
+        if not hasattr(gm, key):
+            setattr(gm, key, getattr(root, key))
+    return gm

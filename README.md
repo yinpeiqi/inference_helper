@@ -148,13 +148,13 @@ graph():
 此处所有blocks的用法都变成了graph（参数的名称不会修改）。得到该计算图后，我们将把这个计算图切割成若干个计算子图。我们将在后续章节描述我们如何对其进行切割。完成切割的操作的同时，我们会记录：1. 需要用什么变量作为输入；2. 过程中生成的变量是否还需要被后面的函数使用。如果需要则作为输出。输入输出信息将被记录进schema中，用于推理。下图为我们通过切割上述GCN的计算图，生成的计算图转为代码后的结果：
 ```python
 # --------- Layer 0 conv function --------
-def forward_conv0(self, graph, x0):
+def conv_block0(self, graph, x0):
     number_of_dst_nodes = graph.number_of_dst_nodes()
     getitem = x0[slice(None, None, number_of_dst_nodes)];  number_of_dst_nodes = None
     conv1 = self.conv1(graph, (x0, getitem));  graph = x0 = getitem = None
     return conv1
 # --------- Layer 1 conv function --------
-def forward_conv1(self, graph, conv1):
+def conv_block1(self, graph, conv1):
     relu = torch.nn.functional.relu(conv1, inplace = False);  conv1 = None
     number_of_dst_nodes_1 = graph.number_of_dst_nodes()
     getitem_1 = relu[slice(None, None, number_of_dst_nodes_1)];  number_of_dst_nodes_1 = None

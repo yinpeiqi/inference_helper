@@ -10,7 +10,7 @@ from .tracer import DGLTracer
 from .utils import inference_helper_getattr
 from .graph_rewriter import GraphRewriter
 from .graph_rearranger import GraphRearranger
-from .constants import FORWARD_CONV
+from .constants import CONV_BLOCK
 
 
 class FunctionGenerator(nn.Module):
@@ -23,10 +23,13 @@ class FunctionGenerator(nn.Module):
             if hasattr(module, name):
                 attr = getattr(module, name)
                 setattr(self, name, attr)
-        self.module_split(module)
+        if isinstance(module, GraphModule):
+            self.module_split(module)
+        else:
+            traced = GraphModule(module, DGLTracer().trace(module))
+            self.module_split(traced)
 
-    def module_split(self, module: nn.Module):
-        traced = GraphModule(module, DGLTracer().trace(module))
+    def module_split(self, traced: GraphModule):
         if self.debug:
             print("-------- Origin forward function -------")
             print(traced.code.strip())
@@ -55,7 +58,7 @@ class FunctionGenerator(nn.Module):
     def register_func_from_graph(self, graph: Graph, layer_id: int):
         graph_src = graph.python_code("self").src
 
-        func_name = FORWARD_CONV + str(layer_id)
+        func_name = CONV_BLOCK + str(layer_id)
         graph_src = graph_src.replace("def forward(", "def {}(".format(func_name))
         graph_src = graph_src.replace(" getattr(", " inference_helper_getattr(")
         self.set_function_from_string(graph_src, func_name)
