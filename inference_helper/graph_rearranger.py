@@ -74,6 +74,7 @@ class GraphRearranger():
                             change_list.append(next_node)
                 for next_node in change_list:
                     next_node.message_degree = message_layer
+        self.output.message_degree += 1
 
     def compute_split_points(self, node_relation, lineno2node_map):
         passing_edges = []
@@ -90,7 +91,7 @@ class GraphRearranger():
             while True:
                 src_lineno, dst_lineno = curr_edge
                 path.append(dst_lineno)
-                if len(node_relation[src_lineno].use) != 1 or\
+                if len(node_relation[src_lineno].use) != 1 or \
                     lineno2node_map[src_lineno].is_message or lineno2node_map[src_lineno].is_input:
                     break
                 if len(node_relation[src_lineno].be_used) != 1:
@@ -104,7 +105,6 @@ class GraphRearranger():
                 curr_edge = (node_relation[src_lineno].use[0], src_lineno)
             for lineno in path:
                 lineno2node_map[lineno].message_degree = message_layer
-        self.output.message_degree += 1
 
     def generate_new_graphs(self, node_relation, lineno2node_map):
         message_layers = [[] for _ in range(self.output.message_degree + 1)]
@@ -146,7 +146,7 @@ class GraphRearranger():
         
         self.compute_message_degree(node_relation, lineno2node_map)
         
-        self.compute_split_points(node_relation, lineno2node_map)
+        # self.compute_split_points(node_relation, lineno2node_map)
 
         self.generate_new_graphs(node_relation, lineno2node_map)
 
