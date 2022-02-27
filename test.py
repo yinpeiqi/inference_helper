@@ -9,7 +9,7 @@ from model.sage import SAGE
 from model.gat import  GAT
 from dgl.data import CiteseerGraphDataset
 from inference_helper import InferenceHelper
-from memory_profiler import profile
+
 
 def train(_class):
     dataset = CiteseerGraphDataset(verbose=False)
@@ -58,6 +58,13 @@ def train(_class):
 
     with torch.no_grad():
         print(_class.__name__)
+        st = time.time()
+        helper = InferenceHelper(model, 20, torch.device('cuda'), debug = False)
+        helper_pred = helper.inference(g, feat)
+        helper_score = (torch.argmax(helper_pred, dim=1) == labels).float().sum() / len(helper_pred)
+        cost_time = time.time() - st
+        print("Helper Inference: {}, inference time: {}".format(helper_score, cost_time))
+        
         if hasattr(model, "inference"):
             st = time.time()
             pred = model.inference(g, 20, torch.device('cuda'), feat)
@@ -65,12 +72,6 @@ def train(_class):
             cost_time = time.time() - st
             print("Origin Inference: {}, inference time: {}".format(func_score, cost_time))
 
-        st = time.time()
-        helper = InferenceHelper(model, 20, torch.device('cuda'), debug = False)
-        helper_pred = helper.inference(g, feat)
-        helper_score = (torch.argmax(helper_pred, dim=1) == labels).float().sum() / len(helper_pred)
-        cost_time = time.time() - st
-        print("Helper Inference: {}, inference time: {}".format(helper_score, cost_time))
 
 
 def test_GCN():

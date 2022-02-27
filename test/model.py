@@ -7,6 +7,8 @@ import sklearn.linear_model as lm
 import sklearn.metrics as skm
 import tqdm
 import time
+from torch.profiler import profile, record_function, ProfilerActivity
+
 
 class SAGE(nn.Module):
     def __init__(self, in_feats, n_hidden, n_classes, n_layers, activation, dropout):
@@ -38,80 +40,75 @@ class SAGE(nn.Module):
         return h
 
     def inference(self, g, x, device, batch_size, num_workers):
-        """
-        Inference with the GraphSAGE model on full neighbors (i.e. without neighbor sampling).
-        g : the entire graph.
-        x : the input of entire node set.
+        print(g)
+        g.to(th.device('cpu'))
+        
+        with profile(activities=[ProfilerActivity.CPU], record_shapes=True) as prof:
+            with record_function("model_inference"):
+                for l, layer in enumerate(self.layers):
+                    dataloader_time = 0
+                    graph_to_gpu = 0
+                    feat_index = 0
+                    feat_to_gpu = 0
+                    compute = 0
+                    to_cpu = 0
 
-        The inference code is written in a fashion that it could handle any number of nodes and
-        layers.
-        """
-        # During inference with sampling, multi-layer blocks are very inefficient because
-        # lots of computations in the first few layers are repeated.
-        # Therefore, we compute the representation of all nodes layer by layer.  The nodes
-        # on each layer are of course splitted in batches.
-        # TODO: can we standardize this?
-        for l, layer in enumerate(self.layers):
-            dataloader_time = 0
-            graph_to_gpu = 0
-            feat_index = 0
-            feat_to_gpu = 0
-            compute = 0
-            to_cpu = 0
+                    y = th.zeros(g.num_nodes(), self.n_hidden if l != len(self.layers) - 1 else self.n_classes)
 
-            y = th.zeros(g.num_nodes(), self.n_hidden if l != len(self.layers) - 1 else self.n_classes)
+                    sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
+                    dataloader = dgl.dataloading.NodeDataLoader(
+                        g,
+                        th.arange(g.num_nodes()).to(g.device),
+                        sampler,
+                        device=g.device if num_workers == 0 else None,
+                        batch_size=batch_size,
+                        shuffle=True,
+                        drop_last=False,
+                        num_workers=num_workers)
 
-            sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
-            dataloader = dgl.dataloading.NodeDataLoader(
-                g,
-                th.arange(g.num_nodes()).to(g.device),
-                sampler,
-                device=device if num_workers == 0 else None,
-                batch_size=batch_size,
-                shuffle=False,
-                drop_last=False,
-                num_workers=num_workers)
+                    t0 = time.time()
+                    for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
+                        t1 = time.time()
+                        dataloader_time += t1 - t0
 
-            t0 = time.time()
-            for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
-                t1 = time.time()
-                dataloader_time += t1 - t0
+                        block = blocks[0]
+                        block = block.int().to(device)
+                        t2 = time.time()
+                        graph_to_gpu += t2 - t1
+                        
+                        h = x[input_nodes]
+                        t2d5 = time.time()
+                        feat_index += t2d5 - t2
+                        
+                        h = h.to(device)
+                        t3 = time.time()
+                        feat_to_gpu += t3 - t2d5
 
-                block = blocks[0]
-                block = block.int().to(device)
-                t2 = time.time()
-                graph_to_gpu += t2 - t1
-                
-                h = x[input_nodes]
-                t2d5 = time.time()
-                feat_index += t2d5 - t2
-                
-                h = h.to(device)
-                t3 = time.time()
-                feat_to_gpu += t3 - t2d5
+                        h = layer(block, h)
+                        if l != len(self.layers) - 1:
+                            h = self.activation(h)
+                            h = self.dropout(h)
+                        t4 = time.time()
+                        compute += t4 - t3
 
-                h = layer(block, h)
-                if l != len(self.layers) - 1:
-                    h = self.activation(h)
-                    h = self.dropout(h)
-                t4 = time.time()
-                compute += t4 - t3
+                        y[output_nodes] = h.cpu()
+                        t5 = time.time()
+                        to_cpu += t5 - t4
 
-                y[output_nodes] = h.cpu()
-                t5 = time.time()
-                to_cpu += t5 - t4
+                        t0 = time.time()
 
-                t0 = time.time()
+                    print()
+                    print("Time comsume:")
+                    print("dataloading: {}".format(dataloader_time))
+                    print("feat index: {}".format(feat_index))
+                    print("feat to gpu: {}".format(feat_to_gpu))
+                    print("graph to gpu: {}".format(graph_to_gpu))
+                    print("inference: {}".format(compute))
+                    print("feat to cpu: {}".format(to_cpu))
+                    print()
 
-            print()
-            print("Time comsume:")
-            print("dataloading: {}".format(dataloader_time))
-            print("feat index: {}".format(feat_index))
-            print("feat to gpu: {}".format(feat_to_gpu))
-            print("graph to gpu: {}".format(graph_to_gpu))
-            print("inference: {}".format(compute))
-            print("feat to cpu: {}".format(to_cpu))
-            print()
-
-            x = y
+                    x = y
+        print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
+        print(prof.key_averages(group_by_input_shape=True).table(sort_by="cpu_time_total", row_limit=10))
+        print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
         return y
