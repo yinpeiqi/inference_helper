@@ -2,14 +2,8 @@ from collections import Iterable
 from torch.fx import Node
 
 import torch
-import torch.nn as nn
 from dgl import DGLHeteroGraph
 
-
-def inference_helper_getattr(obj, name: str):
-    if name.isnumeric() and hasattr(obj, '_modules'):
-        return obj.__dict__['_modules'][name]
-    return getattr(obj, name)
 
 def arg_transform(env, args):
     new_args = ()

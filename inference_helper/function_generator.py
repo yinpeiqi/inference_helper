@@ -7,7 +7,6 @@ from torch.fx import GraphModule, Graph
 
 from .schema import Schema
 from .tracer import DGLTracer
-from .utils import inference_helper_getattr
 from .graph_rewriter import GraphRewriter
 from .graph_rearranger import GraphRearranger
 from .constants import CONV_BLOCK
@@ -60,7 +59,6 @@ class FunctionGenerator(nn.Module):
 
         func_name = CONV_BLOCK + str(layer_id)
         graph_src = graph_src.replace("def forward(", "def {}(".format(func_name))
-        graph_src = graph_src.replace(" getattr(", " inference_helper_getattr(")
         self.set_function_from_string(graph_src, func_name)
 
         if self.debug:
