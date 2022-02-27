@@ -13,7 +13,7 @@ import dgl
 import time
 from dgl.data import CiteseerGraphDataset
 from inference_helper import InferenceHelper
-from inference_helper.tracer import symbolic_trace
+from inference_helper import symbolic_trace
 
 
 class GATConv(nn.Module):
