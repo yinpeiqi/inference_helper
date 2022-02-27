@@ -5,14 +5,33 @@ import dgl.nn
 from torch.fx import Tracer, Proxy, Node, GraphModule
 from torch.fx._compatibility import compatibility
 from dgl.nn.functional import edge_softmax
-from dgl.function.message import BinaryMessageFunction
+from dgl.function.message import BinaryMessageFunction, CopyMessageFunction
 from dgl.function.reducer import SimpleReduceFunction
 
 
 def is_dgl_function(target):
-    if isinstance(target, SimpleReduceFunction) or isinstance(target, BinaryMessageFunction):
+    if isinstance(target, SimpleReduceFunction) \
+    or isinstance(target, BinaryMessageFunction) \
+    or isinstance(target, CopyMessageFunction):
         return True
     return False
+
+def get_dgl_function_kwargs(func):
+    if isinstance(func, CopyMessageFunction):
+        return {"target": func.target,
+                "in_field": func.in_field,
+                "out_field": func.out_field}
+    if isinstance(func, BinaryMessageFunction):
+        return {"binary_op": func.binary_op,
+                "lhs": func.lhs,
+                "rhs": func.rhs,
+                "lhs_field": func.lhs_field,
+                "rhs_field": func.rhs_field,
+                "out_field": func.out_field}
+    if isinstance(func, SimpleReduceFunction):
+        return {"name": func._name,
+                "msg_field": func.msg_field,
+                "out_field": func.out_field}
 
 
 class DGLTracer(Tracer):
@@ -39,7 +58,9 @@ class DGLTracer(Tracer):
     @compatibility(is_backward_compatible=True)
     def create_arg(self, a):
         if is_dgl_function(a):
-            proxy = self.create_proxy("call_function", a.__class__, (), a.__dict__, a.name)
+            print(a)
+            proxy = self.create_proxy(
+                "call_function", a.__class__, (), get_dgl_function_kwargs(a), a.name)
             return proxy.node
         else:
             return super().create_arg(a)
