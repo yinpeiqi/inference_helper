@@ -45,6 +45,7 @@ def get_node_relation(node_list):
                     src_node = dgl_attr_map[data_prefix + data_name]
                     # add link for: x = g.dstdata["x"]
                     add_edge(src_node, node, False)
+
         elif node.node_type == DGL_FUNCTION:
             # TODO: data prefix
             for k, v in node.kwargs.items():
@@ -54,9 +55,7 @@ def get_node_relation(node_list):
             assert len(node.out_edges) == 1 and node.out_edges[0].dst.node_type == DGL_VOID_CALL
             dst = node.out_edges[0].dst
             dgl_attr_map[node.kwargs["out_field"]] = dst
-    
-    for node in node_relation:
-        print(node)
+
     return node_relation
 
 
