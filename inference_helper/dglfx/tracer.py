@@ -9,7 +9,7 @@ from dgl.function.message import BinaryMessageFunction, CopyMessageFunction
 from dgl.function.reducer import SimpleReduceFunction
 
 from .proxy import DGLGraphProxy, DGLFunctionProxy, DGLGraphAttribute, DGLVoidCallProxy
-
+from ..constants import TENSOR, DGL_TENSOR_DATA, CALL_FUNCTION
 
 def is_dgl_function(target):
     if isinstance(target, SimpleReduceFunction) \
@@ -49,6 +49,11 @@ class DGLTracer(Tracer):
     def set_conv_module(self, module):
         self.conv_modules.append(module.__class__.__name__)
 
+    def create_node(self, kind, target, args, kwargs, name=None, type_expr=None) -> Node:
+        node = super().create_node(kind, target, args, kwargs, name, type_expr)
+        node.node_type = TENSOR
+        return node
+
     def create_proxy(self, kind, target, args, kwargs,
                      name=None, type_expr=None, proxy_factory_fn=None):
         if proxy_factory_fn is None:
@@ -78,14 +83,14 @@ class DGLTracer(Tracer):
 
     @compatibility(is_backward_compatible=True)
     def get_from_dgl_attr(self, node: Node) -> "Proxy":
-        node.node_type = "DGLTensorData"
+        node.node_type = DGL_TENSOR_DATA
         return Proxy(node, self)
 
     @compatibility(is_backward_compatible=True)
     def create_arg(self, a):
         if is_dgl_function(a):
             proxy = self.create_proxy(
-                "call_function", a.__class__, (), get_dgl_function_kwargs(a), a.name)
+                CALL_FUNCTION, a.__class__, (), get_dgl_function_kwargs(a), a.name)
             return proxy.node
         else:
             return super().create_arg(a)

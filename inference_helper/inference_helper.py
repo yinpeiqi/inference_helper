@@ -16,7 +16,7 @@ class InferenceHelperBase():
         self._function_generator = FunctionGenerator(module, debug)
         self._schema = self._function_generator.get_schema()
         self._funcs = self._function_generator.get_funcs()
-    
+
     def _trace_output_shape(self, arg2val_map):
         ret_shapes = [[] for _ in range(self._schema.layers_count)]
         for layer, func in zip(self._schema.layers, self._funcs):
@@ -54,7 +54,7 @@ class InferenceHelperBase():
         ret_shapes = self._trace_output_shape(arg2val_map)
 
         for layer, func in zip(self._schema.layers, self._funcs):
-            
+
             rets = []
             for j, _ in enumerate(layer.outputs):
                 rets.append(
