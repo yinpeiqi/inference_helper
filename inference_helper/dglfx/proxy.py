@@ -23,11 +23,11 @@ class DGLGraphProxy(Proxy):
 
     def apply_edges(self, *args, **kwargs):
         return self.tracer.create_proxy("call_method", "apply_edges", (self,) + args, kwargs, 
-            proxy_factory_fn=self.tracer.dgl_graph_proxy)
+            proxy_factory_fn=self.tracer.dgl_void_call)
 
     def update_all(self, *args, **kwargs):
         return self.tracer.create_proxy("call_method", "update_all", (self,) + args, kwargs, 
-            proxy_factory_fn=self.tracer.dgl_graph_proxy)
+            proxy_factory_fn=self.tracer.dgl_void_call)
 
     @property
     def srcdata(self):
@@ -60,7 +60,15 @@ class DGLGraphAttribute(Proxy):
 
     def update(self, *args, **kwargs):
         return self.tracer.create_proxy("call_method", "update", (self,) + args, kwargs, 
-            proxy_factory_fn=self.tracer.dgl_graph_proxy)
+            proxy_factory_fn=self.tracer.dgl_void_call)
+
+    def __getitem__(self, rhs):
+        return self.tracer.create_proxy("call_function", operator.getitem, (self, rhs), {}, 
+            proxy_factory_fn=self.tracer.get_from_dgl_attr)
+
+    def pop(self, rhs):
+        return self.tracer.create_proxy("call_function", operator.getitem, (self, rhs), {}, 
+            proxy_factory_fn=self.tracer.get_from_dgl_attr)
 
 
 class DGLFunctionProxy(Proxy):

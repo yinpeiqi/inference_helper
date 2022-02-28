@@ -49,10 +49,17 @@ class DGLTracer(Tracer):
     def set_conv_module(self, module):
         self.conv_modules.append(module.__class__.__name__)
 
+    def create_proxy(self, kind, target, args, kwargs,
+                     name=None, type_expr=None, proxy_factory_fn=None):
+        if proxy_factory_fn is None:
+            proxy_factory_fn = self.proxy_factory_fn
+        return super().create_proxy(kind, target, args, kwargs, name, type_expr, proxy_factory_fn)
+
     @compatibility(is_backward_compatible=True)
-    def proxy(self, node: Node) -> "Proxy":
+    def proxy_factory_fn(self, node: Node) -> "Proxy":
         if self.graph_proxy is None:
-            return self.dgl_graph_proxy(node)
+            self.graph_proxy = self.dgl_graph_proxy(node)
+            return self.graph_proxy
         if is_dgl_function(node.target):
             return DGLFunctionProxy(node, self)
         return Proxy(node, self)
@@ -68,6 +75,11 @@ class DGLTracer(Tracer):
     @compatibility(is_backward_compatible=True)
     def dgl_void_call(self, node: Node) -> "Proxy":
         return DGLVoidCallProxy(node, self)
+
+    @compatibility(is_backward_compatible=True)
+    def get_from_dgl_attr(self, node: Node) -> "Proxy":
+        node.node_type = "DGLTensorData"
+        return Proxy(node, self)
 
     @compatibility(is_backward_compatible=True)
     def create_arg(self, a):
