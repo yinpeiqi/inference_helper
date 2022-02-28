@@ -1,4 +1,3 @@
-from collections import Iterable
 from torch.fx import Node
 
 import torch
@@ -16,7 +15,7 @@ def arg_transform(env, args):
                 arg.step if not isinstance(arg.step, Node) else env[arg.step.name],
                 arg.stop if not isinstance(arg.stop, Node) else env[arg.stop.name]
             )
-        elif isinstance(arg, Iterable):
+        if isinstance(arg, tuple) or isinstance(arg, list) or isinstance(arg, dict) or isinstance(arg, set):
             new_arg = arg_transform(env, arg)
         else:
             new_arg = arg
@@ -30,7 +29,7 @@ def arg_trace(args):
             ret.add(arg.name)
         if isinstance(arg, slice):
             ret = ret.union(arg_trace((arg.start, arg.step, arg.stop)))
-        if isinstance(arg, Iterable):
+        if isinstance(arg, tuple) or isinstance(arg, list) or isinstance(arg, dict) or isinstance(arg, set):
             ret = ret.union(arg_trace(arg))
     return ret
 
