@@ -8,8 +8,9 @@ from dgl.nn.functional import edge_softmax
 from dgl.function.message import BinaryMessageFunction, CopyMessageFunction
 from dgl.function.reducer import SimpleReduceFunction
 
-from .proxy import DGLGraphProxy, DGLFunctionProxy, DGLGraphAttribute
-from ..constants import TENSOR, DGL_TENSOR_DATA, CALL_FUNCTION, DGL_VOID_CALL
+from .proxy import DGLGraphProxy, DGLGraphAttribute
+from ..constants import DGL_GRAPH, TENSOR, DGL_TENSOR_DATA, DGL_VOID_CALL, DGL_FUNCTION, DGL_GRAPH_DATA, \
+    CALL_FUNCTION, CALL_METHOD
 
 def is_dgl_function(target):
     if isinstance(target, SimpleReduceFunction) \
@@ -46,6 +47,14 @@ class DGLTracer(Tracer):
         autowrap_functions += (edge_softmax,)
         super().__init__(autowrap_modules, autowrap_functions, param_shapes_constant)
 
+    def trace(self, root, concrete_args):
+        graph = super().trace(root, concrete_args)
+        # tag graph call method. e.g., edge_softmax(g, x); g.number_of_nodes()
+        for node in graph.nodes:
+            if node.op == CALL_METHOD and node.args[0].node_type == DGL_GRAPH:
+                node.node_type = DGL_GRAPH_DATA
+        return graph
+
     def set_conv_module(self, module):
         self.conv_modules.append(module.__class__.__name__)
 
@@ -66,7 +75,7 @@ class DGLTracer(Tracer):
             self.graph_proxy = self.dgl_graph_proxy(node)
             return self.graph_proxy
         if is_dgl_function(node.target):
-            return DGLFunctionProxy(node, self)
+            node.node_type = DGL_FUNCTION
         return Proxy(node, self)
 
     @compatibility(is_backward_compatible=True)

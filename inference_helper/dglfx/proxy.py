@@ -3,7 +3,7 @@ import builtins
 
 from torch.fx import Proxy, Node, Tracer
 from ..constants import CALL_METHOD, CALL_FUNCTION, \
-    DGL_GRAPH, DGL_GRAPH_ATTRIBUTE, DGL_FUNCTION, DGL_VOID_CALL
+    DGL_GRAPH, DGL_GRAPH_ATTRIBUTE
 
 class DGLGraphProxy(Proxy):
     def __init__(self, node: Node, tracer: Tracer = None):
@@ -77,12 +77,3 @@ class DGLGraphAttribute(Proxy):
 
     def __str__(self):
         return "{}{}".format(DGL_GRAPH_ATTRIBUTE, super().__str__())
-
-
-class DGLFunctionProxy(Proxy):
-    def __init__(self, node: Node, tracer: Tracer = None):
-        super().__init__(node, tracer)
-        node.node_type = DGL_FUNCTION
-
-    def __str__(self):
-        return "{}{}".format(DGL_FUNCTION, super().__str__())
