@@ -1,51 +1,96 @@
+from torch.fx import Node
+
 from .utils import arg_trace
+from .constants import DGL_FUNCTION, DGL_GRAPH_ATTRIBUTE, DGL_TENSOR_DATA, DGL_VOID_CALL
+
+def add_edge(src, dst, allow_break=True):
+    edge = GEdge(src, dst, allow_break)
+    src.add_out_edge(edge)
+    dst.add_in_edge(edge)
+
+def check_allow_break(src, dst):
+    if src.node_type == DGL_GRAPH_ATTRIBUTE and dst.node_type in (DGL_TENSOR_DATA, DGL_VOID_CALL):
+        return False
+    if src.node_type == DGL_FUNCTION:
+        return False
+    return True
+
+def get_node_relation(node_list):
+    name2gnode_map = {}
+    node_relation = []
+    for lineno, node in enumerate(node_list):
+        node_relation.append(GNode(node, lineno))
+        name2gnode_map[node.name] = node_relation[-1]
+
+    for node in node_relation:
+        args = arg_trace(node.args)
+        for arg in args:
+            allow_break = check_allow_break(node, name2gnode_map[arg.name])
+            add_edge(name2gnode_map[arg.name], node, allow_break)
+
+    dgl_attr_map = {}
+    for node in node_relation:
+        if node.node_type == DGL_GRAPH_ATTRIBUTE:
+            # TODO double check here
+            data_prefix = ""
+            # data_prefix = node.args[1]
+            for e in node.out_edges:
+                dst = e.dst
+                if dst.node_type == DGL_VOID_CALL:
+                    for data_name, v in dst.args[1].items():
+                        # record the item: g.dstdata.update({"x": x})
+                        dgl_attr_map[data_prefix + data_name] = dst
+                elif dst.node_type == DGL_TENSOR_DATA:
+                    data_name = dst.args[1]
+                    src_node = dgl_attr_map[data_prefix + data_name]
+                    # add link for: x = g.dstdata["x"]
+                    add_edge(src_node, node, False)
+        elif node.node_type == DGL_FUNCTION:
+            # TODO: data prefix
+            for k, v in node.kwargs.items():
+                if "field" in k and k != "out_field":
+                    add_edge(dgl_attr_map[v], node, False)
+            # dgl function only call once
+            assert len(node.out_edges) == 1 and node.out_edges[0].dst.node_type == DGL_VOID_CALL
+            dst = node.out_edges[0].dst
+            dgl_attr_map[node.kwargs["out_field"]] = dst
+    
+    for node in node_relation:
+        print(node)
+    return node_relation
 
 
-class NodeRelation:
-    def __init__(self, name, lineno):
-        self.name = name
+class GNode:
+    def __init__(self, node: Node, lineno):
+        self.node = node
+        self.node_type = node.node_type
+        self.name = node.name
+        self.op = node.op
+        self.args = node.args
+        self.kwargs = node.kwargs
+        self.target = node.target
         self.lineno = lineno
-        self.use = []
-        self.be_used = []
+        self.in_edges = []
+        self.out_edges = []
 
-    def set_use(self, use):
-        self.use.append(use)
+    def add_in_edge(self, e):
+        self.in_edges.append(e)
 
-    def set_be_used(self, be_used):
-        self.be_used.append(be_used)
+    def add_out_edge(self, e):
+        self.out_edges.append(e)
 
     def __str__(self):
-        return "{}: {}; {}".format(self.lineno, self.use, self.be_used)
+        return "{} {} {}: {}".format(self.lineno, self.name, self.node_type, 
+            [(("" if e.allow_break else "+") + e.src.name) for e in self.in_edges])
 
-    @staticmethod
-    def get_node_relation(node_list):
-        name2lineno_map = {}
-        node_relation = [None for _ in range(len(node_list))]
-        for lineno, node in enumerate(node_list):            
-            name2lineno_map[node.name] = lineno
-            node_relation[lineno] = NodeRelation(node.name, lineno)
-            used_args = arg_trace(node.args)
-            used_linenos = [name2lineno_map[arg] for arg in used_args]
-            for used_lineno in used_linenos:
-                node_relation[used_lineno].set_be_used(lineno)
-                node_relation[lineno].set_use(used_lineno)
-        return node_relation
-    
-    @staticmethod
-    def print_node_relation(node_list):
-        name2lineno_map = {}
-        node_relation = [None for _ in range(len(node_list))]
-        for lineno, node in enumerate(node_list):            
-            if "getitem" not in node.name and "dst_nodes" not in node.name and "blocks" not in node.name:
-                if "conv" in node.name:
-                    print("usecase \"\\n{}\\n\" as {}".format(node.name, node.name))
-                else:
-                    print("usecase \"{}\" as {}".format(node.name, node.name))
-            name2lineno_map[node.name] = lineno
-            node_relation[lineno] = NodeRelation(node.name, lineno)
-            used_args = arg_trace(node.args)
-            used_linenos = [name2lineno_map[arg] for arg in used_args]
-            for used_lineno in used_linenos:
-                if "getitem" not in node.name and "dst_nodes" not in node.name and "blocks" not in node.name:
-                    if node_relation[used_lineno].name != "blocks" and "getitem" not in node_relation[used_lineno].name and "dst_nodes" not in node_relation[used_lineno].name:
-                        print("{} --> {}".format(node_relation[used_lineno].name, node.name))
+    def __repr__(self):
+        return self.name
+
+class GEdge:
+    def __init__(self, src: GNode, dst: GNode, allow_break=True):
+        self.src = src
+        self.dst = dst
+        self.allow_break = allow_break
+
+    def __repr(self):
+        return "{} - {}".format(self.src, self.dst)

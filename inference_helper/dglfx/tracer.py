@@ -51,7 +51,7 @@ class DGLTracer(Tracer):
         graph = super().trace(root, concrete_args)
         # tag graph call method. e.g., edge_softmax(g, x); g.number_of_nodes()
         for node in graph.nodes:
-            if node.op == CALL_METHOD and node.args[0].node_type == DGL_GRAPH:
+            if node.node_type == TENSOR and node.op == CALL_METHOD and node.args[0].node_type == DGL_GRAPH:
                 node.node_type = DGL_GRAPH_DATA
         return graph
 
@@ -74,8 +74,6 @@ class DGLTracer(Tracer):
         if self.graph_proxy is None:
             self.graph_proxy = self.dgl_graph_proxy(node)
             return self.graph_proxy
-        if is_dgl_function(node.target):
-            node.node_type = DGL_FUNCTION
         return Proxy(node, self)
 
     @compatibility(is_backward_compatible=True)
@@ -99,8 +97,9 @@ class DGLTracer(Tracer):
     @compatibility(is_backward_compatible=True)
     def create_arg(self, a):
         if is_dgl_function(a):
-            proxy = self.create_proxy(
-                CALL_FUNCTION, a.__class__, (), get_dgl_function_kwargs(a), a.name)
+            proxy = self.create_proxy(CALL_FUNCTION, a.__class__, (),
+                get_dgl_function_kwargs(a), a.name,proxy_factory_fn=self.proxy_factory_fn)
+            proxy.node.node_type = DGL_FUNCTION
             return proxy.node
         else:
             return super().create_arg(a)

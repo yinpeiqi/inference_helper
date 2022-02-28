@@ -22,16 +22,20 @@ def arg_transform(env, args):
         new_args += (new_arg,)
     return new_args
 
-def arg_trace(args):
+def arg_trace(a):
     ret = set()
-    for arg in args:
-        if isinstance(arg, Node):
-            ret.add(arg.name)
-        if isinstance(arg, slice):
-            ret = ret.union(arg_trace((arg.start, arg.step, arg.stop)))
-        if isinstance(arg, tuple) or isinstance(arg, list) or isinstance(arg, dict) or isinstance(arg, set):
-            ret = ret.union(arg_trace(arg))
+    if isinstance(a, Node):
+        ret.add(a)
+    if isinstance(a, dict):
+        for _, v in a.items():
+            ret = ret.union(arg_trace(v))
+    if isinstance(a, tuple) or isinstance(a, list):
+        for v in a:
+            ret = ret.union(arg_trace(v))
+    elif isinstance(a, slice):
+        ret = ret.union(arg_trace((a.start, a.step, a.stop)))
     return ret
+
 
 def get_new_arg_input(inputs, arg2val_map, input_nodes, inference_graph, device):
     new_args = ()

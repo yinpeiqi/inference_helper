@@ -15,9 +15,9 @@ class Schema():
             if node.op == PLACEHOLDER:
                 self.first_layer_input.append(node.name)
             if node.op == OUTPUT:
-                output_names = arg_trace(node.args)
-                for name in output_names:
-                    self.last_layer_output.append(name)
+                output_nodes = arg_trace(node.args)
+                for node in output_nodes:
+                    self.last_layer_output.append(node.name)
 
     def create_layer(self, graph):
         self.layers.append(GraphLayer(self))
@@ -26,7 +26,8 @@ class Schema():
                 self.record_input(node.name)
             elif node.op == OUTPUT:
                 output_nodes = arg_trace(node.args)
-                self.record_outputs(output_nodes)
+                output_names = [node.name for node in output_nodes]
+                self.record_outputs(output_names)
 
     def get_layer(self, id):
         return self.layers[id]

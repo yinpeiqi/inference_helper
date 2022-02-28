@@ -1,7 +1,7 @@
 from torch.fx import GraphModule
 
 from .utils import arg_trace
-from .node_relation import NodeRelation
+from .node_relation import get_node_relation
 from .graph_replicator import GraphReplicator
 from .constants import CALL_METHOD, CALL_MODULE, OUTPUT, PLACEHOLDER
 
@@ -19,7 +19,6 @@ class GraphRearranger():
         node.is_message = False
         node.message_degree = -1
         node.is_graph_function = False
-        node.split_points = []
 
     def tag_nodes(self):
         graph_name = None
@@ -140,7 +139,7 @@ class GraphRearranger():
         return self.graphs_list[1:-1]
 
     def rearrange(self):
-        node_relation = NodeRelation.get_node_relation(self.traced.graph.nodes)
+        node_relation = get_node_relation(self.traced.graph.nodes)
         lineno2node_map = self.get_lineno2node_map()
         self.tag_nodes()
         

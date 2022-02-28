@@ -15,12 +15,10 @@ class DGLGraphProxy(Proxy):
         return True
 
     def local_var(self):
-        return self.tracer.create_proxy(CALL_METHOD, "local_var", (self,), {}, 
-            proxy_factory_fn=self.tracer.dgl_graph_proxy)
+        return self
 
     def local_scope(self):
-        return self.tracer.create_proxy(CALL_METHOD, "local_scope", (self,), {}, 
-            proxy_factory_fn=self.tracer.dgl_graph_proxy)
+        return self
 
     def __getitem__(self, rhs):
         return self.tracer.create_proxy(CALL_FUNCTION, operator.getitem, (self, rhs), {}, 
