@@ -79,8 +79,9 @@ class GNode:
         self.out_edges.append(e)
 
     def __str__(self):
-        return "{} {} {}: {}".format(self.lineno, self.name, self.node_type, 
-            [(("" if e.allow_break else "+") + e.src.name) for e in self.in_edges])
+        return "{} {} {}: {} {}".format(self.lineno, self.name, self.node_type, 
+            [(("" if e.allow_break else "+") + str(e.src.lineno)) for e in self.in_edges],
+            [(("" if e.allow_break else "+") + str(e.dst.lineno)) for e in self.out_edges])
 
     def __repr__(self):
         return self.name

@@ -39,33 +39,32 @@ class GraphRearranger():
                 self.output = node
 
     def compute_message_degree(self, nodes):
-        node_queue = []
         for node in nodes:
-            if node.op == PLACEHOLDER:
-                node_queue.append(node)
-        for node in node_queue:
-            for ie in node.in_edges:
-                if ie.src.message_degree == -1:
-                    continue
-            for ie in node.in_edges:
-                node.message_degree = max(node.message_degree, ie.src.message_degree + node.is_message)
             for oe in node.out_edges:
-                node_queue.append(oe.dst)
+                oe.dst.message_degree = max(oe.dst.message_degree, node.message_degree + oe.dst.is_message)
+            for ie in node.in_edges:
+                if ie.src.message_degree == -1 or ie.src.is_graph_function:
+                    ie.src.message_degree = node.message_degree
+                if not ie.allow_break:
+                    print(ie.src.name, ie.src.message_degree, node.name, node.message_degree)
+                    # ie.src.message_degree = node.message_degree
 
-        # graph function's output only belongs to one layer
         for node in nodes:
-            if node.is_graph_function:
-                change_list = [node]
-                message_layer = node.message_degree
-                for next_node in change_list:
-                    for oe in next_node.out_edges:
-                        if oe.dst.is_message:
-                            message_layer = oe.dst.message_degree
-                        else:
-                            change_list.append(oe.dst)
-                for next_node in change_list:
-                    next_node.message_degree = message_layer
-        self.output.message_degree += 1
+            print(node, node.message_degree)
+        # graph function's output only belongs to one layer
+        # for node in nodes:
+        #     if node.is_graph_function:
+        #         change_list = [node]
+        #         message_layer = node.message_degree
+        #         for next_node in change_list:
+        #             for oe in next_node.out_edges:
+        #                 if oe.dst.is_message:
+        #                     message_layer = oe.dst.message_degree
+        #                 else:
+        #                     change_list.append(oe.dst)
+        #         for next_node in change_list:
+        #             next_node.message_degree = message_layer
+        # self.output.message_degree += 1
 
     def generate_new_graphs(self, node_relation, lineno2node_map):
         message_layers = [[] for _ in range(self.output.message_degree + 1)]
@@ -103,6 +102,8 @@ class GraphRearranger():
     def rearrange(self):
         node_relation = get_node_relation(self.traced.graph.nodes)
         self.tag_nodes(node_relation)
+        for node in node_relation:
+            print(node)
 
         self.compute_message_degree(node_relation)
         for node in node_relation:
