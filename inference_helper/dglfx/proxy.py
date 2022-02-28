@@ -18,6 +18,10 @@ class DGLGraphProxy(Proxy):
         return self.tracer.create_proxy(CALL_METHOD, "local_var", (self,), {}, 
             proxy_factory_fn=self.tracer.dgl_graph_proxy)
 
+    def local_scope(self):
+        return self.tracer.create_proxy(CALL_METHOD, "local_scope", (self,), {}, 
+            proxy_factory_fn=self.tracer.dgl_graph_proxy)
+
     def __getitem__(self, rhs):
         return self.tracer.create_proxy(CALL_FUNCTION, operator.getitem, (self, rhs), {}, 
             proxy_factory_fn=self.tracer.dgl_graph_proxy)
@@ -82,12 +86,3 @@ class DGLFunctionProxy(Proxy):
 
     def __str__(self):
         return "{}{}".format(DGL_FUNCTION, super().__str__())
-
-
-class DGLVoidCallProxy(Proxy):
-    def __init__(self, node: Node, tracer: Tracer = None):
-        super().__init__(node, tracer)
-        node.node_type = DGL_VOID_CALL
-
-    def __str__(self):
-        return "{}{}".format(DGL_VOID_CALL, super().__str__())

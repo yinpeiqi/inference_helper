@@ -8,8 +8,8 @@ from dgl.nn.functional import edge_softmax
 from dgl.function.message import BinaryMessageFunction, CopyMessageFunction
 from dgl.function.reducer import SimpleReduceFunction
 
-from .proxy import DGLGraphProxy, DGLFunctionProxy, DGLGraphAttribute, DGLVoidCallProxy
-from ..constants import TENSOR, DGL_TENSOR_DATA, CALL_FUNCTION
+from .proxy import DGLGraphProxy, DGLFunctionProxy, DGLGraphAttribute
+from ..constants import TENSOR, DGL_TENSOR_DATA, CALL_FUNCTION, DGL_VOID_CALL
 
 def is_dgl_function(target):
     if isinstance(target, SimpleReduceFunction) \
@@ -79,7 +79,8 @@ class DGLTracer(Tracer):
 
     @compatibility(is_backward_compatible=True)
     def dgl_void_call(self, node: Node) -> "Proxy":
-        return DGLVoidCallProxy(node, self)
+        node.node_type = DGL_VOID_CALL
+        return Proxy(node, self)
 
     @compatibility(is_backward_compatible=True)
     def get_from_dgl_attr(self, node: Node) -> "Proxy":
