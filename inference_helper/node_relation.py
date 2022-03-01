@@ -25,7 +25,7 @@ def get_node_relation(node_list):
     for node in node_relation:
         args = arg_trace(node.args)
         for arg in args:
-            allow_break = check_allow_break(node, name2gnode_map[arg.name])
+            allow_break = check_allow_break(name2gnode_map[arg.name], node)
             add_edge(name2gnode_map[arg.name], node, allow_break)
 
     dgl_attr_map = {}
@@ -61,8 +61,7 @@ def get_node_relation(node_list):
             assert len(node.out_edges) == 1 and node.out_edges[0].dst.node_type == DGL_VOID_CALL
             dst = node.out_edges[0].dst
             dgl_attr_map[node.kwargs["out_field"]] = dst
-    for node in node_relation:
-        print(node)
+
     return node_relation
 
 
