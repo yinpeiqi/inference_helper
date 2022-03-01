@@ -1,4 +1,5 @@
 from torch.fx import Graph, Node
+from torch.fx.node import map_arg 
 
 from .utils import arg_transform
 
@@ -8,8 +9,11 @@ class GraphReplicator(Graph):
         super().__init__()
         self.env = {}
 
+    def arg_transform(self, node: Node):
+        return self.env[node.name]
+
     def insert_node_copy(self, node: Node):
-        new_args = arg_transform(self.env, node.args)
+        new_args = map_arg(node.args, self.arg_transform)
         new_node = self.create_node(node.op, node.target, new_args, node.kwargs, node.name)
         self.env[node.name] = new_node
         return new_node
