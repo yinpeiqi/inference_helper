@@ -55,11 +55,11 @@ class DGLTracer(Tracer):
             if node.node_type == TENSOR_DATA and node.op == CALL_METHOD and node.args[0].node_type == DGL_GRAPH:
                 node.node_type = DGL_GRAPH_DATA
             # tag x.shape to util_data
-            if node.node_type == TENSOR_DATA and node.op == CALL_FUNCTION \
+            elif node.node_type == TENSOR_DATA and node.op == CALL_FUNCTION \
                 and len(node.args) == 2 and node.args[1] == "shape":
                 node.node_type = UTIL_DATA
             # tag get_attr to util_data
-            if node.op == GET_ATTR:
+            elif node.op == GET_ATTR:
                 node.node_type = UTIL_DATA
         return graph
 
