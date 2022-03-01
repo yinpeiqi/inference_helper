@@ -44,7 +44,7 @@ class GraphRearranger():
             for oe in node.out_edges:
                 oe.dst.message_degree = max(oe.dst.message_degree, node.message_degree + oe.dst.is_message)
             for ie in node.in_edges:
-                if ie.src.message_degree == -1 or ie.src.is_graph_function or not ie.allow_break:
+                if ie.src.message_degree == -1 or ie.src.is_graph_function:
                     ie.src.message_degree = node.message_degree
 
         # graph function's output only belongs to one layer
@@ -61,11 +61,24 @@ class GraphRearranger():
                 for next_node in change_list:
                     next_node.message_degree = update_count
         # connect hard links
-        for i in range(len(nodes) - 1, -1, -1):
-            node = nodes[i]
-            for e in node.in_edges:
-                if not e.allow_break:
-                    e.src.message_degree = e.dst.message_degree
+        travelled = [False for _ in nodes]
+        for node in nodes:
+            def find(n):
+                ret = [n]
+                travelled[n.lineno] = True
+                for e in n.in_edges:
+                    if not travelled[e.src.lineno] and not e.allow_break:
+                        ret.extend(find(e.src))
+                for e in n.out_edges:
+                    if not travelled[e.dst.lineno] and not e.allow_break:
+                        ret.extend(find(e.dst))
+                return ret
+            if not travelled[node.lineno]:
+                node_set = find(node)
+                max_degree = max(n.message_degree for n in node_set)
+                for n in node_set:
+                    n.message_degree = max_degree
+        # remove the first layer
         for node in nodes:
             if node.message_degree > 0:
                 node.message_degree -= 1
