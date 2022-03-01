@@ -26,7 +26,8 @@ class GraphRearranger():
             if node.op == PLACEHOLDER:
                 self.inputs.append(node)
                 node.is_input = True
-                node.message_degree = 0
+                if node.node_type != DGL_GRAPH:
+                    node.message_degree = 0
             if node.op == CALL_MODULE:
                 for e in node.in_edges:
                     if e.src.node_type == DGL_GRAPH:

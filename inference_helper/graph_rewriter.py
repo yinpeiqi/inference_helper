@@ -17,7 +17,7 @@ class GraphRewriter():
 
     @staticmethod
     def remove_unused_nodes(graph: Graph):
-        for node in graph.nodes:
+        for node in graph.nodes.__reversed__():
             if node.op != OUTPUT and node.node_type != DGL_VOID_CALL:
                 if len(node.users) == 0:
                     graph.erase_node(node)

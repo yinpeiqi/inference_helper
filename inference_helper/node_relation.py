@@ -49,13 +49,20 @@ def get_node_relation(node_list):
         elif node.node_type == DGL_FUNCTION:
             # TODO: data prefix
             for k, v in node.kwargs.items():
-                if "field" in k and k != "out_field":
+                if k == "msg_field":
+                    update_all_node = dgl_attr_map[v]
+                    for e in update_all_node.in_edges:
+                        if e.src.node_type == DGL_FUNCTION and k not in e.src.kwargs:
+                            add_edge(e.src, node, False)
+                            break
+                elif "field" in k and k != "out_field":
                     add_edge(dgl_attr_map[v], node, False)
             # dgl function only call once
             assert len(node.out_edges) == 1 and node.out_edges[0].dst.node_type == DGL_VOID_CALL
             dst = node.out_edges[0].dst
             dgl_attr_map[node.kwargs["out_field"]] = dst
-
+    for node in node_relation:
+        print(node)
     return node_relation
 
 
