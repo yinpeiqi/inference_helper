@@ -29,10 +29,11 @@ class InferenceHelperBase():
             if len(output_vals) != len(layer.outputs):
                 raise Exception("output values not match with layer's output.")
             for val, arg_node in zip(output_vals, layer.outputs):
-                if not isinstance(val, torch.Tensor):
-                    raise NotImplementedError("only support tensor for output now")
-                arg2val_map[arg_node] = val.cpu()
-                ret_shapes[layer.id].append(val.size()[1:])
+                if isinstance(val, torch.Tensor):
+                    arg2val_map[arg_node] = val.cpu()
+                    ret_shapes[layer.id].append((torch.Tensor, val.size()[1:]))
+                else:
+                    ret_shapes[layer.id].append((val.__class__, None))
         return ret_shapes
 
     def compute(self, inference_graph, rets, arg2val_map, layer, func):
@@ -56,9 +57,13 @@ class InferenceHelperBase():
 
             rets = []
             for j, _ in enumerate(layer.outputs):
-                rets.append(
-                    torch.zeros((inference_graph.number_of_nodes(),) + tuple(ret_shapes[layer.id][j]))
-                )
+                cls, shape = ret_shapes[layer.id][j]
+                if cls == torch.Tensor:
+                    rets.append(
+                        torch.zeros((inference_graph.number_of_nodes(),) + tuple(shape))
+                    )
+                else:
+                    rets.append(None)
 
             rets = self.compute(inference_graph, rets, arg2val_map, layer, func)
 

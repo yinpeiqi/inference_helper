@@ -22,6 +22,8 @@ def arg_trace(a):
 def get_new_arg_input(inputs, arg2val_map, input_nodes, inference_graph, device):
     new_args = ()
     for arg_node in inputs:
+        if arg_node not in arg2val_map:
+            raise RuntimeError("schema not match with output.")
         if isinstance(arg2val_map[arg_node], torch.Tensor):
             new_args += (arg2val_map[arg_node][input_nodes].to(device),)
         elif isinstance(arg2val_map[arg_node], DGLHeteroGraph):
@@ -37,10 +39,14 @@ def update_ret_output(output_vals, rets, input_nodes, output_nodes, blocks):
         output_vals = (output_vals,)
     for output_val, ret in zip(output_vals, rets):
         if isinstance(output_val, torch.Tensor):
+            if ret is None:
+                raise RuntimeError("Can't determine return's type.")
             if output_val.size()[0] == blocks[0].num_dst_nodes():
                 ret[output_nodes] = output_val.cpu()
             elif output_val.size()[0] == blocks[0].num_src_nodes():
                 ret[input_nodes] = output_val.cpu()
             else:
                 raise RuntimeError("Can't determine return's type.")
+        else:
+            ret = output_val
     return rets
