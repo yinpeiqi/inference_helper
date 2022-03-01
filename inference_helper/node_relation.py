@@ -1,7 +1,8 @@
 from torch.fx import Node
 
 from .utils import arg_trace
-from .constants import DGL_FUNCTION, DGL_GRAPH_ATTRIBUTE, DGL_TENSOR_DATA, DGL_VOID_CALL
+from .constants import DGL_FUNCTION, DGL_GRAPH_ATTRIBUTE, DGL_TENSOR_DATA, DGL_VOID_CALL, \
+    GET_ATTR
 
 def add_edge(src, dst, allow_break=True):
     edge = GEdge(src, dst, allow_break)
@@ -9,6 +10,8 @@ def add_edge(src, dst, allow_break=True):
     dst.add_in_edge(edge)
 
 def check_allow_break(src, dst):
+    if src.op == GET_ATTR:
+        return False
     if src.node_type == DGL_GRAPH_ATTRIBUTE and dst.node_type in (DGL_TENSOR_DATA, DGL_VOID_CALL):
         return False
     if src.node_type == DGL_FUNCTION:
