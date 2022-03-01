@@ -23,7 +23,6 @@ class InferenceHelperBase():
             fake_graph = dgl.graph((torch.tensor([0]), torch.tensor([0])))
             device = self._device if not isinstance(self._device, list) else self._device[0]
             new_args = get_new_arg_input(layer.inputs, arg2val_map, [0], fake_graph, device)
-
             output_vals = func(*new_args)
             if not isinstance(output_vals, tuple):
                 output_vals = (output_vals,)

@@ -1,5 +1,4 @@
 from .constants import PLACEHOLDER, OUTPUT
-from .utils import arg_trace
 
 
 class Schema():
@@ -15,8 +14,8 @@ class Schema():
             if node.op == PLACEHOLDER:
                 self.first_layer_input.append(node.name)
             if node.op == OUTPUT:
-                output_nodes = arg_trace(node.args)
-                for node in output_nodes:
+                args = node.args[0] if isinstance(node.args[0], tuple) else (node.args[0],)
+                for node in args:
                     self.last_layer_output.append(node.name)
 
     def create_layer(self, graph):
@@ -25,8 +24,8 @@ class Schema():
             if node.op == PLACEHOLDER:
                 self.record_input(node.name)
             elif node.op == OUTPUT:
-                output_nodes = arg_trace(node.args)
-                output_names = [node.name for node in output_nodes]
+                args = node.args[0] if isinstance(node.args[0], tuple) else (node.args[0],)
+                output_names = [node.name for node in args]
                 self.record_outputs(output_names)
 
     def get_layer(self, id):

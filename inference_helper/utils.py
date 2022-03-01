@@ -4,24 +4,6 @@ import torch
 from dgl import DGLHeteroGraph
 
 
-def arg_transform(env, args):
-    new_args = ()
-    for arg in args:
-        if isinstance(arg, Node):
-            new_arg = env[arg.name]
-        elif isinstance(arg, slice):
-            new_arg = slice(
-                arg.start if not isinstance(arg.start, Node) else env[arg.start.name],
-                arg.step if not isinstance(arg.step, Node) else env[arg.step.name],
-                arg.stop if not isinstance(arg.stop, Node) else env[arg.stop.name]
-            )
-        if isinstance(arg, tuple) or isinstance(arg, list) or isinstance(arg, dict) or isinstance(arg, set):
-            new_arg = arg_transform(env, arg)
-        else:
-            new_arg = arg
-        new_args += (new_arg,)
-    return new_args
-
 def arg_trace(a):
     ret = set()
     if isinstance(a, Node):

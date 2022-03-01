@@ -51,7 +51,6 @@ class FunctionGenerator(nn.Module):
         graphs_list = rearranger.get_splited_graphs()
 
         for layer_id, graph in enumerate(graphs_list):
-            GraphRewriter.remove_unused_nodes(graph)
             self.register_func_from_graph(graph, layer_id)
             self.schema.create_layer(graph)
 
@@ -60,6 +59,10 @@ class FunctionGenerator(nn.Module):
 
         func_name = CONV_BLOCK + str(layer_id)
         graph_src = graph_src.replace("def forward(", "def {}(".format(func_name))
+        # TODO fix here
+        graph_src = graph_src.replace("dgl_function_message_", "dgl.function.message.")
+        graph_src = graph_src.replace("dgl_function_reducer_", "dgl.function.reducer.")
+        graph_src = graph_src.replace("dgl_ops_edge_softmax_", "dgl.ops.")
         self.set_function_from_string(graph_src, func_name)
 
         if self.debug:

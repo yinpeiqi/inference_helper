@@ -1,9 +1,9 @@
 from torch.fx import GraphModule
 
-from .utils import arg_trace
 from .node_relation import get_node_relation
 from .graph_replicator import GraphReplicator
-from .constants import CALL_METHOD, CALL_MODULE, DGL_GRAPH, DGL_GRAPH_DATA, DGL_VOID_CALL, OUTPUT, PLACEHOLDER
+from .constants import CALL_METHOD, CALL_MODULE, DGL_GRAPH, DGL_GRAPH_DATA, DGL_VOID_CALL, UTIL_DATA, \
+    OUTPUT, PLACEHOLDER
 
 
 class GraphRearranger():
@@ -49,21 +49,26 @@ class GraphRearranger():
 
         # graph function's output only belongs to one layer
         for node in nodes:
-            if node.is_graph_function:
+            if node.is_graph_function or node.node_type == UTIL_DATA:
                 change_list = [node]
+                update_count = node.message_degree
                 for next_node in change_list:
                     for oe in next_node.out_edges:
-                        if oe.dst.message_degree == node.message_degree:
+                        if oe.dst.message_degree > node.message_degree:
+                            update_count = oe.dst.message_degree
+                        elif not oe.dst.is_message and oe.dst.message_degree == node.message_degree:
                             change_list.append(oe.dst)
                 for next_node in change_list:
-                    next_node.message_degree += 1
+                    next_node.message_degree = update_count
         # connect hard links
         for i in range(len(nodes) - 1, -1, -1):
             node = nodes[i]
             for e in node.in_edges:
                 if not e.allow_break:
                     e.src.message_degree = e.dst.message_degree
-        # self.output.message_degree += 1
+        for node in nodes:
+            if node.message_degree > 0:
+                node.message_degree -= 1
 
     def generate_new_graphs(self, nodes):
         message_layers = [[] for _ in range(self.output.message_degree + 1)]
@@ -89,7 +94,7 @@ class GraphRearranger():
             self.graphs_list.append(curr_graph)
 
     def get_splited_graphs(self):
-        return self.graphs_list[1:-1]
+        return self.graphs_list
 
     def rearrange(self):
         node_relation = get_node_relation(self.traced.graph.nodes)

@@ -9,8 +9,8 @@ from dgl.function.message import BinaryMessageFunction, CopyMessageFunction
 from dgl.function.reducer import SimpleReduceFunction
 
 from .proxy import DGLGraphProxy, DGLGraphAttribute
-from ..constants import DGL_GRAPH, TENSOR, DGL_TENSOR_DATA, DGL_VOID_CALL, DGL_FUNCTION, DGL_GRAPH_DATA, \
-    CALL_FUNCTION, CALL_METHOD
+from ..constants import DGL_GRAPH, DGL_TENSOR_DATA, DGL_VOID_CALL, DGL_FUNCTION, DGL_GRAPH_DATA, \
+    CALL_FUNCTION, CALL_METHOD, GET_ATTR, TENSOR_DATA, UTIL_DATA
 
 def is_dgl_function(target):
     if isinstance(target, SimpleReduceFunction) \
@@ -49,10 +49,18 @@ class DGLTracer(Tracer):
 
     def trace(self, root, concrete_args):
         graph = super().trace(root, concrete_args)
-        # tag graph call method. e.g., edge_softmax(g, x); g.number_of_nodes()
+        # static analysis tag nodes
         for node in graph.nodes:
-            if node.node_type == TENSOR and node.op == CALL_METHOD and node.args[0].node_type == DGL_GRAPH:
+            # tag graph call method. e.g., edge_softmax(g, x); g.number_of_nodes()
+            if node.node_type == TENSOR_DATA and node.op == CALL_METHOD and node.args[0].node_type == DGL_GRAPH:
                 node.node_type = DGL_GRAPH_DATA
+            # tag x.shape to util_data
+            if node.node_type == TENSOR_DATA and node.op == CALL_FUNCTION \
+                and len(node.args) == 2 and node.args[1] == "shape":
+                node.node_type = UTIL_DATA
+            # tag get_attr to util_data
+            if node.op == GET_ATTR:
+                node.node_type = UTIL_DATA
         return graph
 
     def set_conv_module(self, module):
@@ -60,7 +68,7 @@ class DGLTracer(Tracer):
 
     def create_node(self, kind, target, args, kwargs, name=None, type_expr=None) -> Node:
         node = super().create_node(kind, target, args, kwargs, name, type_expr)
-        node.node_type = TENSOR
+        node.node_type = TENSOR_DATA
         return node
 
     def create_proxy(self, kind, target, args, kwargs,

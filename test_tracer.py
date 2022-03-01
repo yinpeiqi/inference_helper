@@ -210,7 +210,7 @@ def train():
 
     model = GAT(3, in_feats, hidden_feature, num_classes, [2, 2, 2], F.relu, 0.5, 0.5, 0.5, 0.5)
     model = dgl_symbolic_trace(model)
-    # print(model.graph)
+    print(model.graph)
     # print(model.code)
 
     model = model.cuda()
@@ -229,12 +229,12 @@ def train():
             opt.step()
 
     with torch.no_grad():
-        # st = time.time()
-        # helper = InferenceHelper(model, 20, torch.device('cuda'), debug = True)
-        # helper_pred = helper.inference(g, feat)
-        # helper_score = (torch.argmax(helper_pred, dim=1) == labels).float().sum() / len(helper_pred)
-        # cost_time = time.time() - st
-        # print("Helper Inference: {}, inference time: {}".format(helper_score, cost_time))
+        st = time.time()
+        helper = InferenceHelper(model, 20, torch.device('cuda'), debug = True)
+        helper_pred = helper.inference(g, feat)
+        helper_score = (torch.argmax(helper_pred, dim=1) == labels).float().sum() / len(helper_pred)
+        cost_time = time.time() - st
+        print("Helper Inference: {}, inference time: {}".format(helper_score, cost_time))
         
         if hasattr(model, "inference"):
             st = time.time()
