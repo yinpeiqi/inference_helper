@@ -1,7 +1,7 @@
 from torch.fx import Node
 
-from .utils import arg_trace
-from .constants import DGL_FUNCTION, DGL_GRAPH_ATTRIBUTE, DGL_TENSOR_DATA, DGL_VOID_CALL, \
+from ..utils import arg_trace
+from ..constants import DGL_FUNCTION, DGL_GRAPH_ATTRIBUTE, DGL_TENSOR_DATA, DGL_VOID_CALL, \
     GET_ATTR
 
 def add_edge(src, dst, allow_break=True):

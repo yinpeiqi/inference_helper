@@ -1,6 +1,6 @@
 from torch.fx import GraphModule
 
-from .node_relation import get_node_relation
+from .dglfx.node_relation import get_node_relation
 from .graph_replicator import GraphReplicator
 from .constants import CALL_METHOD, CALL_MODULE, DGL_GRAPH, DGL_GRAPH_DATA, DGL_VOID_CALL, UTIL_DATA, \
     OUTPUT, PLACEHOLDER
