@@ -113,9 +113,10 @@ class DGLTracer(Tracer):
             return super().create_arg(a)
 
     def is_leaf_module(self, m: torch.nn.Module, module_qualified_name : str):
-        if m.__class__.__name__ in self.conv_modules:
-            return True
-        return super().is_leaf_module(m, module_qualified_name)
+        return True
+        # if m.__class__.__name__ in self.conv_modules:
+        #     return True
+        # return super().is_leaf_module(m, module_qualified_name)
 
 
 @compatibility(is_backward_compatible=True)

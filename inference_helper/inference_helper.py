@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import tqdm
 
+from .dglfx import CostEvaluater
 from .function_generator import FunctionGenerator
 from .utils import get_new_arg_input, update_ret_output
 
@@ -14,6 +15,7 @@ class InferenceHelperBase():
         self._device = device
         self._num_workers = num_workers
         self._function_generator = FunctionGenerator(module, debug)
+        self._traced = self._function_generator.traced
         self._schema = self._function_generator.get_schema()
         self._funcs = self._function_generator.get_funcs()
 
@@ -40,6 +42,9 @@ class InferenceHelperBase():
         raise NotImplementedError()
 
     def before_inference(self, graph, *args):
+        evaluater = CostEvaluater(self._traced)
+        first_layer_inputs = (graph,) + tuple(args)
+        evaluater.eval(*first_layer_inputs)
         pass
 
     def inference(self, inference_graph, *args):

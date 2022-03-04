@@ -26,27 +26,27 @@ class FunctionGenerator(nn.Module):
 
     def module_split(self, module: nn.Module):
         if isinstance(module, GraphModule):
-            traced = module
+            self.traced = module
         else:
-            traced = dgl_symbolic_trace(module)
+            self.traced = dgl_symbolic_trace(module)
 
         if self.debug:
             print("-------- Origin forward function -------")
-            print(traced.code.strip())
+            print(self.traced.code.strip())
             print("----------------------------------------")
 
         self.schema = Schema()
-        self.schema.record_inputs_and_outputs(traced.graph)
-        GraphRewriter.blocks_to_graph(traced.graph)
-        GraphRewriter.remove_unused_nodes(traced.graph)
-        traced.recompile()
+        self.schema.record_inputs_and_outputs(self.traced.graph)
+        GraphRewriter.blocks_to_graph(self.traced.graph)
+        GraphRewriter.remove_unused_nodes(self.traced.graph)
+        self.traced.recompile()
 
         if self.debug:
             print("------- Modified forward function ------")
-            print(traced.code.strip())
+            print(self.traced.code.strip())
             print("----------------------------------------")
 
-        rearranger = GraphRearranger(traced)
+        rearranger = GraphRearranger(self.traced)
         rearranger.rearrange()
         graphs_list = rearranger.get_splited_graphs()
 

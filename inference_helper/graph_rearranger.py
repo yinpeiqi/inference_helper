@@ -60,24 +60,7 @@ class GraphRearranger():
                             change_list.append(oe.dst)
                 for next_node in change_list:
                     next_node.message_degree = update_count
-        # connect hard links
-        travelled = [False for _ in nodes]
-        for node in nodes:
-            def find(n):
-                ret = [n]
-                travelled[n.lineno] = True
-                for e in n.in_edges:
-                    if not travelled[e.src.lineno] and not e.allow_break:
-                        ret.extend(find(e.src))
-                for e in n.out_edges:
-                    if not travelled[e.dst.lineno] and not e.allow_break:
-                        ret.extend(find(e.dst))
-                return ret
-            if not travelled[node.lineno]:
-                node_set = find(node)
-                max_degree = max(n.message_degree for n in node_set)
-                for n in node_set:
-                    n.message_degree = max_degree
+
         # remove the first layer
         for node in nodes:
             if node.message_degree > 0:
