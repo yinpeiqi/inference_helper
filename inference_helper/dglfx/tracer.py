@@ -112,6 +112,7 @@ class DGLTracer(Tracer):
         else:
             return super().create_arg(a)
 
+    # default tracer
     def is_leaf_module(self, m: torch.nn.Module, module_qualified_name : str):
         return True
         # if m.__class__.__name__ in self.conv_modules:

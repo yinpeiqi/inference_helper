@@ -66,6 +66,7 @@ class GraphRearranger():
             if node.message_degree > 0:
                 node.message_degree -= 1
 
+    #TODO: here should change to DFS to reduce working memory
     def generate_new_graphs(self, nodes):
         message_layers = [[] for _ in range(self.output.message_degree + 1)]
         layers_input = [set() for _ in range(self.output.message_degree + 1)]
@@ -97,5 +98,7 @@ class GraphRearranger():
         self.tag_nodes(node_relation)
 
         self.compute_message_degree(node_relation)
+
+        #TODO(peiqi): greedy algorithm to reduce data translation
 
         self.generate_new_graphs(node_relation)
