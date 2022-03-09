@@ -70,35 +70,27 @@ class GraphRearranger():
     def greedy_search(self, nodes):
         passing_edges = []
         for node in nodes:
-            if node.node_type != TENSOR_DATA:
-                continue
-            for oe in node.out_edges:
-                if oe.dst.message_degree != node.message_degree:
-                    passing_edges.append(oe)
+            if node.node_type == TENSOR_DATA:
+                for oe in node.out_edges:
+                    if node.is_message and oe.dst.message_degree != node.message_degree:
+                        passing_edges.append(oe)
 
         for start_e in passing_edges:
             e = start_e
-            path = []
             message_layer = e.src.message_degree
             while True:
-                if not e.dst.changable:
-                    break
-                path.append(e.dst)
-                if len(e.dst.out_edges) != 1 or e.dst.is_message or e.dst.op == OUTPUT:
+                if len(e.src.out_edges) != 1 or e.src.is_message or not e.dst.changable:
                     break
                 if len(e.dst.in_edges) != 1:
                     is_same_source = True
                     for ie in e.dst.in_edges:
-                        if ie.dst != e.dst and \
-                            ie.dst.message_degree != message_layer:
+                        if ie.src.message_degree != e.src.message_degree:
                             is_same_source = False
                     if not is_same_source:
                         break
+                e.dst.message_degree = message_layer
                 e = e.dst.out_edges[0]
-            for node in path:
-                node.message_degree = message_layer
 
-    #TODO: here should change to DFS to reduce working memory
     def generate_new_graphs(self, nodes):
         message_layers = [[] for _ in range(self.output.message_degree + 1)]
         layers_input = [set() for _ in range(self.output.message_degree + 1)]
