@@ -2,7 +2,7 @@ from torch.fx import GraphModule
 
 from .dglfx.node_relation import get_node_relation
 from .graph_replicator import GraphReplicator
-from .constants import CALL_METHOD, CALL_MODULE, DGL_GRAPH, DGL_GRAPH_DATA, DGL_VOID_CALL, UTIL_DATA, \
+from .constants import CALL_METHOD, CALL_MODULE, DGL_GRAPH, DGL_GRAPH_DATA, DGL_VOID_CALL, TENSOR_DATA, UTIL_DATA, \
     OUTPUT, PLACEHOLDER
 
 
@@ -13,27 +13,27 @@ class GraphRearranger():
         self.inputs = []
         self.graphs_list = []
 
-    def tagging_node(self, lineno, node):
-        node.lineno = lineno
-        node.is_input = False
+    def tagging_node(self, node):
         node.is_message = False
         node.message_degree = -1
         node.is_graph_function = False
+        node.changable = True
 
     def tag_nodes(self, nodes):
-        for i, node in enumerate(nodes):
-            self.tagging_node(i, node)
+        for node in nodes:
+            self.tagging_node(node)
             if node.op == PLACEHOLDER:
                 self.inputs.append(node)
-                node.is_input = True
                 if node.node_type != DGL_GRAPH:
                     node.message_degree = 0
             if node.op == CALL_MODULE:
                 for e in node.in_edges:
                     if e.src.node_type == DGL_GRAPH:
                         node.is_message = True
+                        node.changable = False
             if node.node_type == DGL_VOID_CALL and node.target == "update_all":
                 node.is_message = True
+                node.changable = False
             if node.op == CALL_METHOD and node.node_type == DGL_GRAPH_DATA:
                 node.is_graph_function = True
             if node.op == OUTPUT:
@@ -42,7 +42,7 @@ class GraphRearranger():
     def compute_message_degree(self, nodes):
         for node in nodes:
             for oe in node.out_edges:
-                oe.dst.message_degree = max(oe.dst.message_degree, node.message_degree + oe.dst.is_message)
+                oe.dst.message_degree = max(oe.dst.message_degree, node.message_degree + oe.src.is_message)
             for ie in node.in_edges:
                 if ie.src.message_degree == -1 or ie.src.is_graph_function:
                     ie.src.message_degree = node.message_degree
@@ -59,12 +59,44 @@ class GraphRearranger():
                         elif not oe.dst.is_message and oe.dst.message_degree == node.message_degree:
                             change_list.append(oe.dst)
                 for next_node in change_list:
+                    next_node.changable = False
                     next_node.message_degree = update_count
 
-        # remove the first layer
+        # remove the last layer
         for node in nodes:
-            if node.message_degree > 0:
+            if node.message_degree == self.output.message_degree:
                 node.message_degree -= 1
+
+    def greedy_search(self, nodes):
+        passing_edges = []
+        for node in nodes:
+            if node.node_type != TENSOR_DATA:
+                continue
+            for oe in node.out_edges:
+                if oe.dst.message_degree != node.message_degree:
+                    passing_edges.append(oe)
+
+        for start_e in passing_edges:
+            e = start_e
+            path = []
+            message_layer = e.src.message_degree
+            while True:
+                if not e.dst.changable:
+                    break
+                path.append(e.dst)
+                if len(e.dst.out_edges) != 1 or e.dst.is_message or e.dst.op == OUTPUT:
+                    break
+                if len(e.dst.in_edges) != 1:
+                    is_same_source = True
+                    for ie in e.dst.in_edges:
+                        if ie.dst != e.dst and \
+                            ie.dst.message_degree != message_layer:
+                            is_same_source = False
+                    if not is_same_source:
+                        break
+                e = e.dst.out_edges[0]
+            for node in path:
+                node.message_degree = message_layer
 
     #TODO: here should change to DFS to reduce working memory
     def generate_new_graphs(self, nodes):
@@ -99,6 +131,6 @@ class GraphRearranger():
 
         self.compute_message_degree(node_relation)
 
-        #TODO(peiqi): greedy algorithm to reduce data translation
+        self.greedy_search(node_relation)
 
         self.generate_new_graphs(node_relation)

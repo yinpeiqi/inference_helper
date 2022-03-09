@@ -102,4 +102,7 @@ class GEdge:
         self.allow_break = allow_break
 
     def __repr(self):
-        return "{} - {}".format(self.src, self.dst)
+        return "{} - {}".format(self.src.name, self.dst.name)
+
+    def __str__(self):
+        return "{} - {}".format(self.src.name, self.dst.name)
