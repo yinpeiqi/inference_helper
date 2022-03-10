@@ -8,7 +8,7 @@ from model.gcn import StochasticTwoLayerGCN
 from model.sage import SAGE
 from model.gat import  GAT
 from dgl.data import CiteseerGraphDataset
-from inference_helper import InferenceHelper
+from inference_helper import InferenceHelper, EdgeControlInferenceHelper, AutoInferenceHelper
 
 
 def train(_class):
@@ -59,19 +59,20 @@ def train(_class):
     with torch.no_grad():
         print(_class.__name__)
         st = time.time()
-        helper = InferenceHelper(model, 20, torch.device('cuda'), debug = False)
+        helper = EdgeControlInferenceHelper(model, 200, torch.device('cuda'), debug = False)
+        # helper = InferenceHelper(model, 20, torch.device('cuda'), debug = False)
+        helper = AutoInferenceHelper(model, torch.device('cuda'), debug = False)
         helper_pred = helper.inference(g, feat)
         helper_score = (torch.argmax(helper_pred, dim=1) == labels).float().sum() / len(helper_pred)
         cost_time = time.time() - st
         print("Helper Inference: {}, inference time: {}".format(helper_score, cost_time))
-        
+
         if hasattr(model, "inference"):
             st = time.time()
             pred = model.inference(g, 20, torch.device('cuda'), feat)
             func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
             cost_time = time.time() - st
             print("Origin Inference: {}, inference time: {}".format(func_score, cost_time))
-
 
 
 def test_GCN():

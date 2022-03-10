@@ -4,6 +4,7 @@ import torch.nn as nn
 import tqdm
 
 from .dglfx import CostEvaluater
+from .auto_turnner import AutoTunner
 from .function_generator import FunctionGenerator
 from .custom_dataloader import CustomDataset
 from .utils import get_new_arg_input, update_ret_output
@@ -127,6 +128,37 @@ class EdgeControlInferenceHelper(InferenceHelperBase):
         sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
         nids = torch.arange(graph.number_of_nodes()).to(graph.device)
         custom_dataset = CustomDataset(self._max_edge_in_batch, graph, nids)
+        dataloader = dgl.dataloading.NodeDataLoader(
+            graph,
+            custom_dataset,
+            sampler,
+            device=self._device if self._num_workers == 0 else 'cpu',
+            shuffle=False,
+            drop_last=False,
+            num_workers=self._num_workers)
+
+        for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
+            new_args = get_new_arg_input(layer.inputs, arg2val_map, input_nodes, blocks[0], self._device)
+
+            output_vals = func(*new_args)
+            del new_args
+
+            rets = update_ret_output(output_vals, rets, input_nodes, output_nodes, blocks)
+
+        return rets
+
+
+class AutoInferenceHelper(InferenceHelperBase):
+    def __init__(self, module: nn.Module, device, num_workers = 4, debug = False):
+        super().__init__(module, device, debug)
+        self._num_workers = num_workers
+        self.auto_tunner = AutoTunner(self._device)
+
+    def compute(self, graph, rets, arg2val_map, layer, func):
+        max_edge_in_batch = self.auto_tunner.search(graph, arg2val_map, layer, func)
+        sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
+        nids = torch.arange(graph.number_of_nodes()).to(graph.device)
+        custom_dataset = CustomDataset(max_edge_in_batch, graph, nids)
         dataloader = dgl.dataloading.NodeDataLoader(
             graph,
             custom_dataset,
