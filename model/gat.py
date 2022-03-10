@@ -4,6 +4,7 @@ import torch.nn as nn
 
 import dgl
 from dgl.nn import GATConv
+import tqdm
 
 
 class GAT(nn.Module):
@@ -58,11 +59,11 @@ class GAT(nn.Module):
             dataloader = dgl.dataloading.NodeDataLoader(
                 g, th.arange(g.number_of_nodes()), sampler,
                 batch_size=batch_size,
-                shuffle=True,
+                shuffle=False,
                 drop_last=False,
                 num_workers=4)
 
-            for input_nodes, output_nodes, blocks in dataloader:
+            for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
                 block = blocks[0].to(device)
 
                 h = x[input_nodes].to(device)

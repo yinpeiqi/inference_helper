@@ -42,9 +42,9 @@ class InferenceHelperBase():
         raise NotImplementedError()
 
     def before_inference(self, graph, *args):
-        evaluater = CostEvaluater(self._traced)
-        first_layer_inputs = (graph,) + tuple(args)
-        evaluater.eval(*first_layer_inputs)
+        # evaluater = CostEvaluater(self._traced)
+        # first_layer_inputs = (graph,) + tuple(args)
+        # evaluater.eval(*first_layer_inputs)
         pass
 
     def inference(self, inference_graph, *args):
@@ -114,6 +114,7 @@ class InferenceHelper(InferenceHelperBase):
             del new_args
 
             rets = update_ret_output(output_vals, rets, input_nodes, output_nodes, blocks)
+            del output_vals
 
         return rets
 
@@ -144,6 +145,7 @@ class EdgeControlInferenceHelper(InferenceHelperBase):
             del new_args
 
             rets = update_ret_output(output_vals, rets, input_nodes, output_nodes, blocks)
+            del output_vals
 
         return rets
 
@@ -175,5 +177,6 @@ class AutoInferenceHelper(InferenceHelperBase):
             del new_args
 
             rets = update_ret_output(output_vals, rets, input_nodes, output_nodes, blocks)
+            del output_vals
 
         return rets

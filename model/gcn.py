@@ -2,6 +2,7 @@ import torch
 import dgl
 import torch.nn as nn
 import torch.nn.functional as F
+import tqdm
 
 
 class StochasticTwoLayerGCN(nn.Module):
@@ -38,12 +39,12 @@ class StochasticTwoLayerGCN(nn.Module):
             dataloader = dgl.dataloading.NodeDataLoader(
                 g, torch.arange(g.number_of_nodes()), sampler,
                 batch_size=batch_size,
-                shuffle=True,
+                shuffle=False,
                 drop_last=False,
                 num_workers=4)
 
             # Within a layer, iterate over nodes in batches
-            for input_nodes, output_nodes, blocks in dataloader:
+            for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
                 block = blocks[0].to(device)
 
                 # Copy the features of necessary input nodes to GPU
