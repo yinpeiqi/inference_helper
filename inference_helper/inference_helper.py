@@ -5,15 +5,14 @@ import tqdm
 
 from .dglfx import CostEvaluater
 from .function_generator import FunctionGenerator
+from .custom_dataloader import CustomDataset
 from .utils import get_new_arg_input, update_ret_output
 
 
 class InferenceHelperBase():
-    def __init__(self, module: nn.Module, batch_size, device, num_workers = 4, debug = False):
+    def __init__(self, module: nn.Module, device, debug = False):
         # add a '_' in order not crash with the origin one.
-        self._batch_size = batch_size
         self._device = device
-        self._num_workers = num_workers
         self._function_generator = FunctionGenerator(module, debug)
         self._traced = self._function_generator.traced
         self._schema = self._function_generator.get_schema()
@@ -90,6 +89,11 @@ class InferenceHelperBase():
 
 
 class InferenceHelper(InferenceHelperBase):
+    def __init__(self, module: nn.Module, batch_size, device, num_workers = 4, debug = False):
+        super().__init__(module, device, debug)
+        self._batch_size = batch_size
+        self._num_workers = num_workers
+
     def compute(self, graph, rets, arg2val_map, layer, func):
         sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
         dataloader = dgl.dataloading.NodeDataLoader(
@@ -97,8 +101,39 @@ class InferenceHelper(InferenceHelperBase):
             torch.arange(graph.number_of_nodes()).to(graph.device),
             sampler,
             batch_size=self._batch_size,
-            device=self._device if self._num_workers == 0 else None,
-            shuffle=True,
+            device=self._device if self._num_workers == 0 else 'cpu',
+            shuffle=False,
+            drop_last=False,
+            num_workers=self._num_workers)
+
+        for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
+            new_args = get_new_arg_input(layer.inputs, arg2val_map, input_nodes, blocks[0], self._device)
+
+            output_vals = func(*new_args)
+            del new_args
+
+            rets = update_ret_output(output_vals, rets, input_nodes, output_nodes, blocks)
+
+        return rets
+
+
+class EdgeControlInferenceHelper(InferenceHelperBase):
+    def __init__(self, module: nn.Module, max_edge_in_batch, device, num_workers = 4, debug = False):
+        super().__init__(module, device, debug)
+        print(self._device)
+        self._max_edge_in_batch = max_edge_in_batch
+        self._num_workers = num_workers
+
+    def compute(self, graph, rets, arg2val_map, layer, func):
+        sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
+        nids = torch.arange(graph.number_of_nodes()).to(graph.device)
+        custom_dataset = CustomDataset(self._max_edge_in_batch, graph, nids)
+        dataloader = dgl.dataloading.NodeDataLoader(
+            graph,
+            custom_dataset,
+            sampler,
+            device=self._device if self._num_workers == 0 else 'cpu',
+            shuffle=False,
             drop_last=False,
             num_workers=self._num_workers)
 
