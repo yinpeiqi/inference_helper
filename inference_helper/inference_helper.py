@@ -120,7 +120,6 @@ class InferenceHelper(InferenceHelperBase):
 class EdgeControlInferenceHelper(InferenceHelperBase):
     def __init__(self, module: nn.Module, max_edge_in_batch, device, num_workers = 4, debug = False):
         super().__init__(module, device, debug)
-        print(self._device)
         self._max_edge_in_batch = max_edge_in_batch
         self._num_workers = num_workers
 
