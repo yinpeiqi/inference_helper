@@ -70,7 +70,6 @@ class GraphRearranger():
     def greedy_search(self, nodes):
         passing_edges = []
         for node in nodes:
-            print(node, node.message_degree)
             if node.node_type == TENSOR_DATA:
                 for oe in node.out_edges:
                     if node.is_message and oe.dst.message_degree != node.message_degree:
