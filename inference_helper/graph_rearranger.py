@@ -70,6 +70,7 @@ class GraphRearranger():
     def greedy_search(self, nodes):
         passing_edges = []
         for node in nodes:
+            print(node, node.message_degree)
             if node.node_type == TENSOR_DATA:
                 for oe in node.out_edges:
                     if node.is_message and oe.dst.message_degree != node.message_degree:
@@ -79,7 +80,7 @@ class GraphRearranger():
             e = start_e
             message_layer = e.src.message_degree
             while True:
-                if len(e.src.out_edges) != 1 or e.src.is_message or not e.dst.changable:
+                if len(e.src.out_edges) != 1 or e.dst.is_message or not e.dst.changable:
                     break
                 if len(e.dst.in_edges) != 1:
                     is_same_source = True
