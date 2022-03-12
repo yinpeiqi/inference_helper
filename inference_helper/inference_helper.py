@@ -2,11 +2,12 @@ import dgl
 import torch
 import torch.nn as nn
 import tqdm
+import gc
 
 from .dglfx import CostEvaluater
 from .auto_turnner import AutoTunner
 from .function_generator import FunctionGenerator
-from .custom_dataloader import CustomDataset
+from .custom_dataloader import CustomDataloader
 from .utils import get_new_arg_input, update_ret_output
 
 
@@ -71,6 +72,8 @@ class InferenceHelperBase():
                     rets.append(None)
 
             rets = self.compute(inference_graph, rets, arg2val_map, layer, func)
+            gc.collect()
+            torch.cuda.empty_cache()
 
             # delete intermediate val
             for arg_node in layer.inputs:
@@ -127,11 +130,9 @@ class EdgeControlInferenceHelper(InferenceHelperBase):
 
     def compute(self, graph, rets, arg2val_map, layer, func):
         sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
-        nids = torch.arange(graph.number_of_nodes()).to(graph.device)
-        custom_dataset = CustomDataset(self._max_edge_in_batch, graph, nids)
-        dataloader = dgl.dataloading.NodeDataLoader(
+        dataloader = CustomDataloader(
             graph,
-            custom_dataset,
+            self._max_edge_in_batch,
             sampler,
             device=self._device if self._num_workers == 0 else 'cpu',
             shuffle=False,
@@ -151,32 +152,41 @@ class EdgeControlInferenceHelper(InferenceHelperBase):
 
 
 class AutoInferenceHelper(InferenceHelperBase):
-    def __init__(self, module: nn.Module, device, num_workers = 4, debug = False):
+    def __init__(self, module: nn.Module, device, num_workers = 0, debug = False):
         super().__init__(module, device, debug)
         self._num_workers = num_workers
-        self.auto_tunner = AutoTunner(self._device)
 
     def compute(self, graph, rets, arg2val_map, layer, func):
-        max_edge_in_batch = self.auto_tunner.search(graph, arg2val_map, layer, func)
+        auto_tunner = AutoTunner(10000)
+        start_edge_count = auto_tunner.edge_count
+
         sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
-        nids = torch.arange(graph.number_of_nodes()).to(graph.device)
-        custom_dataset = CustomDataset(max_edge_in_batch, graph, nids)
-        dataloader = dgl.dataloading.NodeDataLoader(
+        dataloader = CustomDataloader(
             graph,
-            custom_dataset,
+            start_edge_count,
             sampler,
-            device=self._device if self._num_workers == 0 else 'cpu',
             shuffle=False,
-            drop_last=False,
-            num_workers=self._num_workers)
+            drop_last=False)
 
+        curr_edge_count = start_edge_count
         for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
-            new_args = get_new_arg_input(layer.inputs, arg2val_map, input_nodes, blocks[0], self._device)
+            print(blocks[0])
+            try:
+                torch.cuda.reset_max_memory_allocated()
+                new_args = get_new_arg_input(layer.inputs, arg2val_map, input_nodes, blocks[0], self._device)
 
-            output_vals = func(*new_args)
-            del new_args
+                output_vals = func(*new_args)
+                print(torch.cuda.max_memory_allocated() // 1024 ** 2)
+                del new_args
 
-            rets = update_ret_output(output_vals, rets, input_nodes, output_nodes, blocks)
-            del output_vals
+                rets = update_ret_output(output_vals, rets, input_nodes, output_nodes, blocks)
+                del output_vals
+                curr_edge_count = auto_tunner.search()
+            except Exception as e:
+                print(e)
+                curr_edge_count = auto_tunner.break_peak()
+                dataloader.reset_batch_node(output_nodes.shape[0])
+            finally:
+                dataloader.modify_edge_count(curr_edge_count)
 
         return rets
