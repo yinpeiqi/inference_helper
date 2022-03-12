@@ -182,10 +182,14 @@ class AutoInferenceHelper(InferenceHelperBase):
                 rets = update_ret_output(output_vals, rets, input_nodes, output_nodes, blocks)
                 del output_vals
                 curr_edge_count = auto_tunner.search()
+
             except Exception as e:
                 print(e)
                 curr_edge_count = auto_tunner.break_peak()
                 dataloader.reset_batch_node(output_nodes.shape[0])
+                gc.collect()
+                torch.cuda.empty_cache()
+
             finally:
                 dataloader.modify_edge_count(curr_edge_count)
 
