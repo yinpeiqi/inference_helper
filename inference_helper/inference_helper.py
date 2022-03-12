@@ -7,19 +7,19 @@ import gc
 from .auto_turnner import AutoTunner
 from .function_generator import FunctionGenerator
 from .custom_dataloader import CustomDataloader
-from .module_sliencer import ModuleSliencer
+from .module_silencer import Modulesilencer
 from .utils import get_new_arg_input, update_ret_output
 
 
 class InferenceHelperBase():
-    def __init__(self, module: nn.Module, device, slience_modules = [], debug = False):
+    def __init__(self, module: nn.Module, device, silence_modules = [], debug = False):
         # add a '_' in order not crash with the origin one.
         self._device = device
         self._function_generator = FunctionGenerator(module, debug)
         # we re register attributes to function generator.
-        self._module_sliencer = ModuleSliencer(self._function_generator)
-        self.slience_modules = slience_modules
-        self.slience_modules.append(nn.Dropout)
+        self._module_silencer = Modulesilencer(self._function_generator)
+        self.silence_modules = silence_modules
+        self.silence_modules.append(nn.Dropout)
         self._traced = self._function_generator.traced
         self._schema = self._function_generator.get_schema()
         self._funcs = self._function_generator.get_funcs()
@@ -54,7 +54,7 @@ class InferenceHelperBase():
 
     def inference(self, inference_graph, *args):
         self.before_inference(inference_graph, *args)
-        self._module_sliencer.slience(self.slience_modules)
+        self._module_silencer.silence(self.silence_modules)
 
         first_layer_inputs = (inference_graph,) + tuple(args)
         if len(first_layer_inputs) != len(self._schema.first_layer_input):
@@ -77,9 +77,9 @@ class InferenceHelperBase():
                 else:
                     rets.append(None)
 
-            rets = self.compute(inference_graph, rets, arg2val_map, layer, func)
             gc.collect()
             torch.cuda.empty_cache()
+            rets = self.compute(inference_graph, rets, arg2val_map, layer, func)
 
             # delete intermediate val
             for arg_node in layer.inputs:
@@ -95,7 +95,7 @@ class InferenceHelperBase():
             outputs += (arg2val_map[arg_node],)
         
         self.after_inference()
-        self._module_sliencer.unslience()
+        self._module_silencer.unsilence()
 
         if len(outputs) == 1:
             return outputs[0]
@@ -103,8 +103,8 @@ class InferenceHelperBase():
 
 
 class InferenceHelper(InferenceHelperBase):
-    def __init__(self, module: nn.Module, batch_size, device, num_workers = 4, slience_modules = [], debug = False):
-        super().__init__(module, device, slience_modules, debug)
+    def __init__(self, module: nn.Module, batch_size, device, num_workers = 4, silence_modules = [], debug = False):
+        super().__init__(module, device, silence_modules, debug)
         self._batch_size = batch_size
         self._num_workers = num_workers
 
@@ -133,8 +133,8 @@ class InferenceHelper(InferenceHelperBase):
 
 
 class EdgeControlInferenceHelper(InferenceHelperBase):
-    def __init__(self, module: nn.Module, max_edge_in_batch, device, num_workers = 4,  slience_modules = [], debug = False):
-        super().__init__(module, device, slience_modules=slience_modules, debug=debug)
+    def __init__(self, module: nn.Module, max_edge_in_batch, device, num_workers = 4,  silence_modules = [], debug = False):
+        super().__init__(module, device, silence_modules=silence_modules, debug=debug)
         self._max_edge_in_batch = max_edge_in_batch
         self._num_workers = num_workers
 
@@ -149,7 +149,8 @@ class EdgeControlInferenceHelper(InferenceHelperBase):
             drop_last=False,
             num_workers=self._num_workers)
 
-        for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
+        pbar = tqdm.tqdm(total=graph.number_of_nodes())
+        for input_nodes, output_nodes, blocks in dataloader:
             new_args = get_new_arg_input(layer.inputs, arg2val_map, input_nodes, blocks[0], self._device)
 
             output_vals = func(*new_args)
@@ -157,13 +158,15 @@ class EdgeControlInferenceHelper(InferenceHelperBase):
 
             rets = update_ret_output(output_vals, rets, input_nodes, output_nodes, blocks)
             del output_vals
+            pbar.update(output_nodes.shape[0])
+        pbar.close()
 
         return rets
 
 
 class AutoInferenceHelper(InferenceHelperBase):
-    def __init__(self, module: nn.Module, device, slience_modules = [], debug = False):
-        super().__init__(module, device, slience_modules, debug)
+    def __init__(self, module: nn.Module, device, silence_modules = [], debug = False):
+        super().__init__(module, device, silence_modules, debug)
 
     def compute(self, graph, rets, arg2val_map, layer, func):
         auto_tunner = AutoTunner(10000)
@@ -178,7 +181,8 @@ class AutoInferenceHelper(InferenceHelperBase):
             drop_last=False)
 
         curr_edge_count = start_edge_count
-        for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
+        pbar = tqdm.tqdm(total=graph.number_of_nodes())
+        for input_nodes, output_nodes, blocks in dataloader:
             print(blocks[0])
             try:
                 torch.cuda.reset_max_memory_allocated()
@@ -191,6 +195,7 @@ class AutoInferenceHelper(InferenceHelperBase):
                 rets = update_ret_output(output_vals, rets, input_nodes, output_nodes, blocks)
                 del output_vals
                 curr_edge_count = auto_tunner.search()
+                pbar.update(output_nodes.shape[0])
 
             except Exception as e:
                 print(e)
@@ -201,7 +206,6 @@ class AutoInferenceHelper(InferenceHelperBase):
 
             finally:
                 dataloader.modify_edge_count(curr_edge_count)
+        pbar.close()
 
-        gc.collect()
-        torch.cuda.empty_cache()
         return rets
