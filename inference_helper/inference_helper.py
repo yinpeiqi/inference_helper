@@ -4,18 +4,22 @@ import torch.nn as nn
 import tqdm
 import gc
 
-from .dglfx import CostEvaluater
 from .auto_turnner import AutoTunner
 from .function_generator import FunctionGenerator
 from .custom_dataloader import CustomDataloader
+from .module_sliencer import ModuleSliencer
 from .utils import get_new_arg_input, update_ret_output
 
 
 class InferenceHelperBase():
-    def __init__(self, module: nn.Module, device, debug = False):
+    def __init__(self, module: nn.Module, device, slience_modules = [], debug = False):
         # add a '_' in order not crash with the origin one.
         self._device = device
         self._function_generator = FunctionGenerator(module, debug)
+        # we re register attributes to function generator.
+        self._module_sliencer = ModuleSliencer(self._function_generator)
+        self.slience_modules = slience_modules
+        self.slience_modules.append(nn.Dropout)
         self._traced = self._function_generator.traced
         self._schema = self._function_generator.get_schema()
         self._funcs = self._function_generator.get_funcs()
@@ -43,13 +47,15 @@ class InferenceHelperBase():
         raise NotImplementedError()
 
     def before_inference(self, graph, *args):
-        # evaluater = CostEvaluater(self._traced)
-        # first_layer_inputs = (graph,) + tuple(args)
-        # evaluater.eval(*first_layer_inputs)
+        pass
+
+    def after_inference(self):
         pass
 
     def inference(self, inference_graph, *args):
         self.before_inference(inference_graph, *args)
+        self._module_sliencer.slience(self.slience_modules)
+
         first_layer_inputs = (inference_graph,) + tuple(args)
         if len(first_layer_inputs) != len(self._schema.first_layer_input):
             raise Exception("layer's input not match with args.")
@@ -87,14 +93,18 @@ class InferenceHelperBase():
         for name in self._schema.last_layer_output:
             arg_node = self._schema.name2arg_map[name]
             outputs += (arg2val_map[arg_node],)
+        
+        self.after_inference()
+        self._module_sliencer.unslience()
+
         if len(outputs) == 1:
             return outputs[0]
         return tuple(outputs)
 
 
 class InferenceHelper(InferenceHelperBase):
-    def __init__(self, module: nn.Module, batch_size, device, num_workers = 4, debug = False):
-        super().__init__(module, device, debug)
+    def __init__(self, module: nn.Module, batch_size, device, num_workers = 4, slience_modules = [], debug = False):
+        super().__init__(module, device, slience_modules, debug)
         self._batch_size = batch_size
         self._num_workers = num_workers
 
@@ -123,8 +133,8 @@ class InferenceHelper(InferenceHelperBase):
 
 
 class EdgeControlInferenceHelper(InferenceHelperBase):
-    def __init__(self, module: nn.Module, max_edge_in_batch, device, num_workers = 4, debug = False):
-        super().__init__(module, device, debug)
+    def __init__(self, module: nn.Module, max_edge_in_batch, device, num_workers = 4,  slience_modules = [], debug = False):
+        super().__init__(module, device, slience_modules=slience_modules, debug=debug)
         self._max_edge_in_batch = max_edge_in_batch
         self._num_workers = num_workers
 
@@ -152,9 +162,8 @@ class EdgeControlInferenceHelper(InferenceHelperBase):
 
 
 class AutoInferenceHelper(InferenceHelperBase):
-    def __init__(self, module: nn.Module, device, num_workers = 0, debug = False):
-        super().__init__(module, device, debug)
-        self._num_workers = num_workers
+    def __init__(self, module: nn.Module, device, slience_modules = [], debug = False):
+        super().__init__(module, device, slience_modules, debug)
 
     def compute(self, graph, rets, arg2val_map, layer, func):
         auto_tunner = AutoTunner(10000)
@@ -193,4 +202,6 @@ class AutoInferenceHelper(InferenceHelperBase):
             finally:
                 dataloader.modify_edge_count(curr_edge_count)
 
+        gc.collect()
+        torch.cuda.empty_cache()
         return rets
