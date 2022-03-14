@@ -8,7 +8,7 @@ def get_memory_in_MiB():
     info = pynvml.nvmlDeviceGetMemoryInfo(handle)
     return info
 
-class AutoTunner:
+class AutoTurnner:
     def __init__(self, device, start_edge_count = 10000):
         self.device = device
         self.edge_count = start_edge_count

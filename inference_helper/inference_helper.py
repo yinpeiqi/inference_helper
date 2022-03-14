@@ -4,7 +4,7 @@ import torch.nn as nn
 import tqdm
 import gc
 
-from .auto_turnner import AutoTunner
+from .auto_turner import AutoTurnner
 from .function_generator import FunctionGenerator
 from .custom_dataloader import CustomDataloader
 from .module_silencer import Modulesilencer
@@ -169,7 +169,7 @@ class AutoInferenceHelper(InferenceHelperBase):
         super().__init__(module, device, silence_modules, debug)
 
     def compute(self, graph, rets, arg2val_map, layer, func):
-        auto_tunner = AutoTunner(10000)
+        auto_tunner = AutoTurnner(10000)
         start_edge_count = auto_tunner.edge_count
 
         sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
