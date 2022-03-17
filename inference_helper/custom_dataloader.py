@@ -3,8 +3,18 @@ import functools
 
 import torch
 import dgl
-from dgl.dataloading.dataloader import _divide_by_worker, _TensorizedDatasetIter
+from dgl.dataloading.dataloader import _TensorizedDatasetIter
 
+
+def _divide_by_worker(dataset):
+    num_samples = dataset.shape[0]
+    worker_info = torch.utils.data.get_worker_info()
+    if worker_info:
+        num_samples_per_worker = num_samples // worker_info.num_workers + 1
+        start = num_samples_per_worker * worker_info.id
+        end = min(start + num_samples_per_worker, num_samples)
+        dataset = dataset[start:end]
+    return dataset
 
 class CustomDataloader(dgl.dataloading.NodeDataLoader):
     def __init__(self, g, start_edge_count, sampler, device='cpu', shuffle=False, drop_last=False, num_workers=0):
@@ -41,7 +51,7 @@ class CustomDataset(dgl.dataloading.TensorizedDataset):
         if in_degrees is None:
             self.ori_indegrees = g.in_degrees(train_nids)
         # move __iter__ to here
-        indices = _divide_by_worker(self._indices, self.batch_size, self.drop_last)
+        indices = _divide_by_worker(self._indices)
         id_tensor = self._id_tensor[indices.to(self._device)]
         self.in_degrees = [0]
         self.in_degrees.extend(self.ori_indegrees[indices].tolist())
