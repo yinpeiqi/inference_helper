@@ -17,13 +17,10 @@ class AutoTurner:
         self.free_memory = info.free * 0.9 // 1024 ** 2
 
     def search(self):
-        if not self.peak_reached:
-            max_memory_allocated = torch.cuda.max_memory_allocated() // 1024 ** 2
-            increase_rate = self.free_memory / max_memory_allocated
-            self.edge_count *= increase_rate
-            self.edge_count = int(self.edge_count)
-        else:
-            self.edge_count *= 1.04
+        max_memory_allocated = torch.cuda.max_memory_allocated() // 1024 ** 2
+        increase_rate = self.free_memory / max_memory_allocated
+        self.edge_count *= increase_rate
+        self.edge_count = int(self.edge_count)
         return self.edge_count
 
     def break_peak(self):
