@@ -9,21 +9,20 @@ def get_memory_in_MiB():
     return info
 
 class AutoTurner:
-    def __init__(self, device, start_edge_count = 10000):
-        self.device = device
-        self.edge_count = start_edge_count
-        self.peak_reached = False
+    def __init__(self):
         info = get_memory_in_MiB()
         self.free_memory = info.free * 0.9 // 1024 ** 2
 
-    def search(self):
+    def search(self, g):
+        curr_node = g.number_of_dst_nodes()
+        curr_edge = g.num_edges()
         max_memory_allocated = torch.cuda.max_memory_allocated() // 1024 ** 2
         increase_rate = self.free_memory / max_memory_allocated
-        self.edge_count *= increase_rate
-        self.edge_count = int(self.edge_count)
-        return self.edge_count
+        curr_node = int(curr_node * increase_rate)
+        curr_edge = int(curr_edge * increase_rate)
+        return curr_node, curr_edge
 
-    def break_peak(self):
-        self.peak_reached = True
-        self.edge_count //= 2
-        return self.edge_count
+    def break_peak(self, g):
+        curr_node = g.number_of_nodes()
+        curr_edge = g.num_edges()
+        return curr_node // 2, curr_edge // 2

@@ -93,7 +93,7 @@ class InferenceHelperBase():
         for name in self._schema.last_layer_output:
             arg_node = self._schema.name2arg_map[name]
             outputs += (arg2val_map[arg_node],)
-        
+
         self.after_inference()
         self._module_silencer.unsilence()
 
@@ -169,43 +169,44 @@ class AutoInferenceHelper(InferenceHelperBase):
         super().__init__(module, device, silence_modules, debug)
 
     def compute(self, graph, rets, arg2val_map, layer, func):
-        auto_tunner = AutoTurner(10000)
-        start_edge_count = auto_tunner.edge_count
+        auto_tunner = AutoTurner()
+        start_max_node = 1000
+        start_max_edge = 10000
 
         sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
         dataloader = CustomDataloader(
             graph,
-            start_edge_count,
+            start_max_node,
+            start_max_edge,
             sampler,
             shuffle=False,
             drop_last=False)
 
-        curr_edge_count = start_edge_count
         pbar = tqdm.tqdm(total=graph.number_of_nodes())
         for input_nodes, output_nodes, blocks in dataloader:
-            print(blocks[0])
             try:
                 torch.cuda.reset_max_memory_allocated()
                 new_args = get_new_arg_input(layer.inputs, arg2val_map, input_nodes, blocks[0], self._device)
 
                 output_vals = func(*new_args)
-                print(torch.cuda.max_memory_allocated() // 1024 ** 2)
+                print(blocks[0], "; max memory = ", torch.cuda.max_memory_allocated() // 1024 ** 2, "GB")
                 del new_args
 
                 rets = update_ret_output(output_vals, rets, input_nodes, output_nodes, blocks)
                 del output_vals
-                curr_edge_count = auto_tunner.search()
+                nxt_max_node, nxt_max_edge = auto_tunner.search(blocks[0])
                 pbar.update(output_nodes.shape[0])
 
             except Exception as e:
                 print(e)
-                curr_edge_count = auto_tunner.break_peak()
+                nxt_max_node, nxt_max_edge = auto_tunner.break_peak(blocks[0])
                 dataloader.reset_batch_node(output_nodes.shape[0])
                 gc.collect()
-                torch.cuda.empty_cache()
 
             finally:
-                dataloader.modify_edge_count(curr_edge_count)
+                dataloader.modify_max_node(nxt_max_node)
+                dataloader.modify_max_edge(nxt_max_edge)
+                torch.cuda.empty_cache()
         pbar.close()
 
         return rets
