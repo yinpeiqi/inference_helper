@@ -96,8 +96,8 @@ class InferenceHelperBase():
 
 
 class InferenceHelper(InferenceHelperBase):
-    def __init__(self, module: nn.Module, batch_size, device, num_workers = 4, silence_modules = [], debug = False):
-        super().__init__(module, device, silence_modules, debug)
+    def __init__(self, module: nn.Module, batch_size, device, num_workers = 4, debug = False):
+        super().__init__(module, device, debug)
         self._batch_size = batch_size
         self._num_workers = num_workers
 
@@ -126,8 +126,8 @@ class InferenceHelper(InferenceHelperBase):
 
 
 class EdgeControlInferenceHelper(InferenceHelperBase):
-    def __init__(self, module: nn.Module, max_edge_in_batch, device, num_workers = 4,  silence_modules = [], debug = False):
-        super().__init__(module, device, silence_modules=silence_modules, debug=debug)
+    def __init__(self, module: nn.Module, max_edge_in_batch, device, num_workers = 4, debug = False):
+        super().__init__(module, device, debug=debug)
         self._max_edge_in_batch = max_edge_in_batch
         self._num_workers = num_workers
 
@@ -158,8 +158,8 @@ class EdgeControlInferenceHelper(InferenceHelperBase):
 
 
 class AutoInferenceHelper(InferenceHelperBase):
-    def __init__(self, module: nn.Module, device, silence_modules = [], debug = False):
-        super().__init__(module, device, silence_modules, debug)
+    def __init__(self, module: nn.Module, device, debug = False):
+        super().__init__(module, device, debug)
 
     def compute(self, graph, rets, arg2val_map, layer, func):
         auto_tunner = AutoTurner()
