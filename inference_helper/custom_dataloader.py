@@ -18,9 +18,13 @@ def _divide_by_worker(dataset):
 
 class CustomDataloader(dgl.dataloading.NodeDataLoader):
     def __init__(self, g, start_edge_count, sampler, device='cpu', shuffle=False, drop_last=False, num_workers=0):
-        in_degrees = g.in_degrees()
-        nids = torch.arange(g.number_of_nodes()).to(g.device)
-        custom_dataset = CustomDataset(start_edge_count, g, nids, in_degrees)
+        # ind = g.in_degrees()
+        # _, indices = torch.sort(ind)
+        # nids = indices
+        nids = torch.arange(g.number_of_nodes() - 1, -1, -1).to(g.device)
+        # nids = torch.arange(g.number_of_nodes()).to(g.device)
+
+        custom_dataset = CustomDataset(start_edge_count, g, nids)
         sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
         super().__init__(g,
                          custom_dataset,
@@ -31,9 +35,9 @@ class CustomDataloader(dgl.dataloading.NodeDataLoader):
                          num_workers=num_workers)
 
     def modify_edge_count(self, edge_count):
-        self.dataset.max_mem = edge_count
+        self.dataset.max_edge = edge_count
         if self.dataset.curr_iter is not None:
-            self.dataset.curr_iter.max_mem = edge_count
+            self.dataset.curr_iter.max_edge = edge_count
 
     def reset_batch_node(self, node_count):
         if self.dataset.curr_iter is not None:
@@ -43,10 +47,10 @@ class CustomDataloader(dgl.dataloading.NodeDataLoader):
         return super(Generic, self).__setattr__(__name, __value)
 
 class CustomDataset(dgl.dataloading.TensorizedDataset):
-    def __init__(self, max_mem, g, train_nids, in_degrees=None):
+    def __init__(self, max_edge, g, train_nids, in_degrees=None):
         super().__init__(train_nids, 20, False)
         self.device = train_nids.device
-        self.max_mem = max_mem
+        self.max_edge = max_edge
         self.ori_indegrees = in_degrees
         if in_degrees is None:
             self.ori_indegrees = g.in_degrees(train_nids)
@@ -59,7 +63,7 @@ class CustomDataset(dgl.dataloading.TensorizedDataset):
             self.in_degrees[i] += self.in_degrees[i - 1]
         self.in_degrees.append(2e18)
         self.curr_iter = CustomDatasetIter(
-            id_tensor, self.max_mem, self.in_degrees, self.drop_last, self._mapping_keys)
+            id_tensor, self.max_edge, self.in_degrees, self.drop_last, self._mapping_keys)
 
     def __getattr__(self, attribute_name):
         if attribute_name in CustomDataset.functions:
@@ -72,14 +76,15 @@ class CustomDataset(dgl.dataloading.TensorizedDataset):
         return self.curr_iter
 
 class CustomDatasetIter(_TensorizedDatasetIter):
-    def __init__(self, dataset, max_mem, in_degrees, drop_last, mapping_keys):
+    def __init__(self, dataset, max_edge, in_degrees, drop_last, mapping_keys):
         super().__init__(dataset, 1, drop_last, mapping_keys)
-        self.max_mem = max_mem
+        self.max_edge = max_edge
         self.in_degrees = in_degrees
 
     def get_end_idx(self):
+        # TODO(Peiqi): change it to logN algorithm
         end_idx = self.index + 1
-        while self.in_degrees[end_idx + 1] - self.in_degrees[self.index] < self.max_mem:
+        while self.in_degrees[end_idx + 1] - self.in_degrees[self.index] < self.max_edge:
             end_idx += 1
         return end_idx
 
