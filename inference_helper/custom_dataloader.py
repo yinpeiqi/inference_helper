@@ -56,7 +56,7 @@ class CustomDataset(dgl.dataloading.TensorizedDataset):
         if in_degrees is None:
             self.ori_indegrees = g.in_degrees(train_nids)
         # move __iter__ to here
-        indices = _divide_by_worker(self._indices)
+        indices = _divide_by_worker(train_nids)
         id_tensor = self._id_tensor[indices.to(self._device)]
         self.in_degrees = [0]
         self.in_degrees.extend(self.ori_indegrees[indices].tolist())
@@ -89,6 +89,7 @@ class CustomDatasetIter(_TensorizedDatasetIter):
         while self.in_degrees[end_idx + 1] - self.in_degrees[self.index] < self.max_edge and \
             end_idx - self.index < self.max_node:
             end_idx += 1
+        print(self.in_degrees[end_idx + 1] - self.in_degrees[self.index], self.max_edge)
         return end_idx
 
     def _next_indices(self):
