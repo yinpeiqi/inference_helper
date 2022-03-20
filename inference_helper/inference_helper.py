@@ -173,12 +173,14 @@ class AutoInferenceHelper(InferenceHelperBase):
         start_max_node = 1000
         start_max_edge = 10000
 
+        nids = torch.arange(graph.number_of_nodes()).to(graph.device)
         sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
         dataloader = CustomDataloader(
             graph,
+            nids,
+            sampler,
             start_max_node,
             start_max_edge,
-            sampler,
             shuffle=False,
             drop_last=False)
 

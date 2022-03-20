@@ -17,11 +17,7 @@ def _divide_by_worker(dataset):
     return dataset
 
 class CustomDataloader(dgl.dataloading.NodeDataLoader):
-    def __init__(self, g, start_max_node, start_max_edge, sampler, device='cpu', shuffle=False, drop_last=False, num_workers=0):
-        # ind = g.in_degrees()
-        # _, indices = torch.sort(ind)
-        # nids = indices
-        nids = torch.arange(g.number_of_nodes()).to(g.device)
+    def __init__(self, g, nids, sampler, start_max_node=1000, start_max_edge=10000, device='cpu', shuffle=False, drop_last=False, num_workers=0):
 
         custom_dataset = CustomDataset(start_max_node, start_max_edge, g, nids)
         sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
