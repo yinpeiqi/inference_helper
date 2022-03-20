@@ -7,19 +7,14 @@ import gc
 from .auto_turner import AutoTurner
 from .function_generator import FunctionGenerator
 from .custom_dataloader import CustomDataloader
-from .module_silencer import Modulesilencer
 from .utils import get_new_arg_input, update_ret_output
 
 
 class InferenceHelperBase():
-    def __init__(self, module: nn.Module, device, silence_modules = [], debug = False):
+    def __init__(self, module: nn.Module, device, debug = False):
         # add a '_' in order not crash with the origin one.
         self._device = device
         self._function_generator = FunctionGenerator(module, debug)
-        # we re register attributes to function generator.
-        self._module_silencer = Modulesilencer(self._function_generator)
-        self.silence_modules = silence_modules
-        self.silence_modules.append(nn.Dropout)
         self._traced = self._function_generator.traced
         self._schema = self._function_generator.get_schema()
         self._funcs = self._function_generator.get_funcs()
@@ -54,7 +49,6 @@ class InferenceHelperBase():
 
     def inference(self, inference_graph, *args):
         self.before_inference(inference_graph, *args)
-        self._module_silencer.silence(self.silence_modules)
 
         first_layer_inputs = (inference_graph,) + tuple(args)
         if len(first_layer_inputs) != len(self._schema.first_layer_input):
@@ -95,7 +89,6 @@ class InferenceHelperBase():
             outputs += (arg2val_map[arg_node],)
 
         self.after_inference()
-        self._module_silencer.unsilence()
 
         if len(outputs) == 1:
             return outputs[0]
