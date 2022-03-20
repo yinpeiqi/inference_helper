@@ -89,7 +89,6 @@ class CustomDatasetIter(_TensorizedDatasetIter):
         while self.in_degrees[end_idx + 1] - self.in_degrees[self.index] < self.max_edge and \
             end_idx - self.index < self.max_node:
             end_idx += 1
-        print(self.in_degrees[end_idx + 1] - self.in_degrees[self.index], self.max_edge)
         return end_idx
 
     def _next_indices(self):
