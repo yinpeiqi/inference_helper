@@ -178,22 +178,24 @@ class AutoInferenceHelper(InferenceHelperBase):
             drop_last=False)
 
         pbar = tqdm.tqdm(total=graph.number_of_nodes())
+        max_memory = 0
         for input_nodes, output_nodes, blocks in dataloader:
             try:
-                torch.cuda.reset_max_memory_allocated()
+                torch.cuda.reset_peak_memory_stats()
                 new_args = get_new_arg_input(layer.inputs, arg2val_map, input_nodes, blocks[0], self._device)
 
                 output_vals = func(*new_args)
-                print(blocks[0], "; max memory = ", torch.cuda.max_memory_allocated() // 1024 ** 2, "GB")
+                # print(blocks[0], "; max memory = ", torch.cuda.max_memory_allocated() // 1024 ** 2, "GB")
                 del new_args
 
                 rets = update_ret_output(output_vals, rets, input_nodes, output_nodes, blocks)
                 del output_vals
                 nxt_max_node, nxt_max_edge = auto_tunner.search(blocks[0])
+                max_memory = max(torch.cuda.max_memory_allocated() // 1024 ** 2, max_memory)
                 pbar.update(output_nodes.shape[0])
 
             except Exception as e:
-                print(e)
+                print("out of memory")
                 nxt_max_node, nxt_max_edge = auto_tunner.break_peak(blocks[0])
                 dataloader.reset_batch_node(output_nodes.shape[0])
                 gc.collect()
@@ -203,5 +205,5 @@ class AutoInferenceHelper(InferenceHelperBase):
                 dataloader.modify_max_edge(nxt_max_edge)
                 torch.cuda.empty_cache()
         pbar.close()
-
+        print("maximum memory allocated: ", max_memory)
         return rets
