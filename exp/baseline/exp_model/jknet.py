@@ -21,7 +21,9 @@ class JKNet(nn.Module):
                  mode='cat',
                  dropout=0.):
         super(JKNet, self).__init__()
-
+        
+        self.n_hidden = hid_dim
+        self.n_classes = out_dim
         self.mode = mode
         self.dropout = nn.Dropout(dropout)
         self.layers = nn.ModuleList()
@@ -105,8 +107,8 @@ class JKNet(nn.Module):
             for feat in feat_lst:
                 h_lst.append(feat[input_nodes].to(device))
             
-            jumped = self.jump(feat_lst)
-            agged = self.agge(g, jumped)
+            jumped = self.jump(h_lst)
+            agged = self.agge(block, jumped)
             output = self.output(agged)
 
             y[output_nodes] = output.cpu()
