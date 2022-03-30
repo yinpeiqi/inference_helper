@@ -195,7 +195,7 @@ class AutoInferenceHelper(InferenceHelperBase):
                 pbar.update(output_nodes.shape[0])
 
             except Exception as e:
-                print("out of memory")
+                print(e)
                 nxt_max_node, nxt_max_edge = auto_tunner.break_peak(blocks[0])
                 dataloader.reset_batch_node(output_nodes.shape[0])
                 gc.collect()
