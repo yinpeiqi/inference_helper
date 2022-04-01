@@ -75,7 +75,7 @@ class JKNet(nn.Module):
                 drop_last=False,
                 num_workers=0)
 
-            for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
+            for input_nodes, output_nodes, blocks in dataloader:
                 block = blocks[0]
 
                 block = block.int().to(device)
@@ -99,7 +99,7 @@ class JKNet(nn.Module):
             drop_last=False,
             num_workers=0)
 
-        for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
+        for input_nodes, output_nodes, blocks in dataloader:
             block = blocks[0]
 
             block = block.int().to(device)

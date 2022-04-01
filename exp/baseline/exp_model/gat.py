@@ -65,23 +65,43 @@ class GAT(nn.Module):
                 batch_size=batch_size,
                 shuffle=False,
                 drop_last=False,
+                device=device,
                 num_workers=0)
 
+            memorys = []
+            a, b, c, d, e = 0, 0, 0, 0, 0
+            import time
+            t0 = time.time()
             # for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
             for input_nodes, output_nodes, blocks in dataloader:
+                t1 = time.time()
+                a += t1-t0
+                torch.cuda.reset_peak_memory_stats()
                 th.cuda.empty_cache()
+                t2 = time.time()
+                e += t2-t1
+                
                 block = blocks[0].to(device)
-
                 h = x[input_nodes].to(device)
+                t3 = time.time()
+                b += t3-t2
+
                 h = layer(block, h)
                 if l == self.num_layers - 1:
                     logits = h.mean(1)
+                    t4 = time.time()
+                    c += t4-t3
                     y[output_nodes] = logits.cpu()
                 else:
                     h = h.flatten(1)
+                    t4 = time.time()
+                    c += t4-t3
                     y[output_nodes] = h.cpu()
-
+                t0 = time.time()
+                d += t0-t4
+                memorys.append(torch.cuda.max_memory_allocated() // 1024 ** 2)
             x = y
-
-        print("memory: ", torch.cuda.max_memory_allocated() // 1024 ** 2)
+            # print(memorys)
+            print(a, b, c, d, e)
+        # print("memory: ", torch.cuda.max_memory_allocated() // 1024 ** 2)
         return y

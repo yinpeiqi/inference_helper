@@ -82,44 +82,64 @@ def train(args):
     else:
         raise NotImplementedError()
 
-    model = model.cuda()
+    if args.gpu == -1:
+        device = "cpu"
+    else:
+        device = "cuda:" + str(args.gpu)
+    model = model.to(torch.device(device))
     opt = torch.optim.Adam(model.parameters())
     loss_fcn = nn.CrossEntropyLoss()
 
     for epoch in range(args.num_epochs):
-        for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
-            blocks = [b.to(torch.device('cuda')) for b in blocks]
-            input_features = feat[input_nodes].to(torch.device('cuda'))
+        for input_nodes, output_nodes, blocks in dataloader:
+            blocks = [b.to(torch.device(device)) for b in blocks]
+            input_features = feat[input_nodes].to(torch.device(device))
             pred = model(blocks, input_features)
-            output_labels = labels[output_nodes].to(torch.device('cuda'))
+            output_labels = labels[output_nodes].to(torch.device(device))
             loss = loss_fcn(pred, output_labels)
             opt.zero_grad()
             loss.backward()
             opt.step()
+            break
 
     with torch.no_grad():
-        if args.auto:
+        if args.cpu:
+            print(args.num_layers, args.model, "CPU FULL", args.dataset, args.num_heads, args.num_hidden)
+            st = time.time()
+            model.to('cpu')
+            pred = model([g for _ in range(args.num_layers)], feat)
+            model.to(device)
+            func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
+            cost_time = time.time() - st
+            print("CPU Inference: {}, inference time: {}".format(func_score, cost_time))
+
+        elif args.auto:
             print(args.num_layers, args.model, "auto", args.dataset, args.num_heads, args.num_hidden)
             st = time.time()
             # helper = EdgeControlInferenceHelper(model, 2621440, torch.device('cuda'), debug = False)
             # helper = InferenceHelper(model, 2000, torch.device('cuda'), debug = False)
-            helper = AutoInferenceHelper(model, torch.device('cuda'), debug = args.debug)
+            helper = AutoInferenceHelper(model, torch.device(device), debug = args.debug)
             helper_pred = helper.inference(g, feat)
             helper_score = (torch.argmax(helper_pred, dim=1) == labels).float().sum() / len(helper_pred)
             cost_time = time.time() - st
             print("Helper Inference: {}, inference time: {}".format(helper_score, cost_time))
 
         else:
-            print(args.num_layers, args.model, args.batch_size, args.dataset, args.num_heads, args.num_hidden)
+            if args.gpu == -1:
+                print(args.num_layers, args.model, "CPU", args.batch_size, args.dataset, args.num_heads, args.num_hidden)
+            else:
+                print(args.num_layers, args.model, "GPU", args.batch_size, args.dataset, args.num_heads, args.num_hidden)
             st = time.time()
-            pred = model.inference(g, args.batch_size, torch.device('cuda'), feat)
+            pred = model.inference(g, args.batch_size, torch.device(device), feat)
             func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
             cost_time = time.time() - st
-            print("max memory:", torch.cuda.max_memory_allocated() // 1024 ** 2)
+            if args.gpu != -1:
+                print("max memory:", torch.cuda.max_memory_allocated() // 1024 ** 2)
             print("Origin Inference: {}, inference time: {}".format(func_score, cost_time))
 
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
+    argparser.add_argument('--cpu', action="store_true")
     argparser.add_argument('--gpu', type=int, default=0,
                            help="GPU device ID. Use -1 for CPU training")
     argparser.add_argument('--model', type=str, default='GCN')

@@ -42,7 +42,7 @@ class StochasticTwoLayerGCN(nn.Module):
                 num_workers=0)
 
             # Within a layer, iterate over nodes in batches
-            for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
+            for input_nodes, output_nodes, blocks in dataloader:
                 block = blocks[0].to(device)
 
                 # Copy the features of necessary input nodes to GPU

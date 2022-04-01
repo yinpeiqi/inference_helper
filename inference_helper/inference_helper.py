@@ -174,25 +174,39 @@ class AutoInferenceHelper(InferenceHelperBase):
             sampler,
             start_max_node,
             start_max_edge,
+            device=self._device,
             shuffle=False,
             drop_last=False)
 
-        pbar = tqdm.tqdm(total=graph.number_of_nodes())
+        # pbar = tqdm.tqdm(total=graph.number_of_nodes())
         max_memory = 0
+        memorys = []
+        a, b, c, d, e = 0, 0, 0, 0, 0
+        import time
+        t0 = time.time()
         for input_nodes, output_nodes, blocks in dataloader:
+            t1 = time.time()
+            a += t1-t0
             try:
                 torch.cuda.reset_peak_memory_stats()
                 new_args = get_new_arg_input(layer.inputs, arg2val_map, input_nodes, blocks[0], self._device)
+                t2 = time.time()
+                b += t2-t1
 
                 output_vals = func(*new_args)
+                t3 = time.time()
+                c += t3-t2
                 # print(blocks[0], "; max memory = ", torch.cuda.max_memory_allocated() // 1024 ** 2, "GB")
                 del new_args
 
                 rets = update_ret_output(output_vals, rets, input_nodes, output_nodes, blocks)
+                t4 = time.time()
+                d += t4-t3
                 del output_vals
                 nxt_max_node, nxt_max_edge = auto_tunner.search(blocks[0])
+                memorys.append(torch.cuda.max_memory_allocated() // 1024 ** 2)
                 max_memory = max(torch.cuda.max_memory_allocated() // 1024 ** 2, max_memory)
-                pbar.update(output_nodes.shape[0])
+                # pbar.update(output_nodes.shape[0])
 
             except Exception as e:
                 print(e)
@@ -204,6 +218,10 @@ class AutoInferenceHelper(InferenceHelperBase):
                 dataloader.modify_max_node(nxt_max_node)
                 dataloader.modify_max_edge(nxt_max_edge)
                 torch.cuda.empty_cache()
-        pbar.close()
-        print("maximum memory allocated: ", max_memory)
+                t0 = time.time()
+                e += t0-t4
+        # pbar.close()
+        # print(memorys)
+        print(a, b, c, d, e)
+        # print("maximum memory allocated: ", max_memory)
         return rets
