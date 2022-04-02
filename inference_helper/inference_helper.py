@@ -181,7 +181,7 @@ class AutoInferenceHelper(InferenceHelperBase):
         # pbar = tqdm.tqdm(total=graph.number_of_nodes())
         max_memory = 0
         memorys = []
-        a, b, c, d, e = 0, 0, 0, 0, 0
+        a, b, c, d, e1 = 0, 0, 0, 0, 0
         import time
         t0 = time.time()
         for input_nodes, output_nodes, blocks in dataloader:
@@ -219,9 +219,9 @@ class AutoInferenceHelper(InferenceHelperBase):
                 dataloader.modify_max_edge(nxt_max_edge)
                 torch.cuda.empty_cache()
                 t0 = time.time()
-                e += t0-t4
+                e1 += t0-t4
         # pbar.close()
         # print(memorys)
-        print(a, b, c, d, e)
+        print(a, b, c, d, e1)
         # print("maximum memory allocated: ", max_memory)
         return rets
