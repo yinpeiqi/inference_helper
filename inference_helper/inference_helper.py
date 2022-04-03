@@ -11,13 +11,21 @@ from .utils import get_new_arg_input, update_ret_output
 
 
 class InferenceHelperBase():
-    def __init__(self, module: nn.Module, device, debug = False):
+    def __init__(self, module: nn.Module, device, use_uva = False, debug = False):
         # add a '_' in order not crash with the origin one.
         self._device = device
+        self._use_uva = use_uva
         self._function_generator = FunctionGenerator(module, debug)
         self._traced = self._function_generator.traced
         self._schema = self._function_generator.get_schema()
         self._funcs = self._function_generator.get_funcs()
+
+    def set_ndata(self, layer, graph, arg2val_map):
+        for arg_node in layer.inputs:
+            if arg_node not in arg2val_map:
+                raise RuntimeError("schema not match with output.")
+            if isinstance(arg2val_map[arg_node], torch.Tensor):
+                graph.ndata[arg_node.name] = arg2val_map[arg_node]
 
     def _trace_output_shape(self, arg2val_map):
         ret_shapes = [[] for _ in range(self._schema.layers_count)]
@@ -97,7 +105,7 @@ class InferenceHelperBase():
 
 class InferenceHelper(InferenceHelperBase):
     def __init__(self, module: nn.Module, batch_size, device, num_workers = 4, debug = False):
-        super().__init__(module, device, debug)
+        super().__init__(module, device, debug=debug)
         self._batch_size = batch_size
         self._num_workers = num_workers
 
@@ -158,8 +166,8 @@ class EdgeControlInferenceHelper(InferenceHelperBase):
 
 
 class AutoInferenceHelper(InferenceHelperBase):
-    def __init__(self, module: nn.Module, device, debug = False):
-        super().__init__(module, device, debug)
+    def __init__(self, module: nn.Module, device, use_uva, debug = False):
+        super().__init__(module, device, use_uva, debug)
 
     def compute(self, graph, rets, arg2val_map, layer, func):
         auto_tunner = AutoTurner()
@@ -167,6 +175,10 @@ class AutoInferenceHelper(InferenceHelperBase):
         start_max_edge = 10000
 
         nids = torch.arange(graph.number_of_nodes()).to(graph.device)
+        if self._use_uva:
+            nids = nids.to(self._device)
+            self.set_ndata(layer, graph, arg2val_map)
+
         sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
         dataloader = CustomDataloader(
             graph,
@@ -175,6 +187,7 @@ class AutoInferenceHelper(InferenceHelperBase):
             start_max_node,
             start_max_edge,
             device=self._device,
+            use_uva=self._use_uva,
             shuffle=False,
             drop_last=False)
 
@@ -188,15 +201,17 @@ class AutoInferenceHelper(InferenceHelperBase):
             t1 = time.time()
             a += t1-t0
             try:
+                auto_tunner.set_free()
                 torch.cuda.reset_peak_memory_stats()
-                new_args = get_new_arg_input(layer.inputs, arg2val_map, input_nodes, blocks[0], self._device)
+                new_args = get_new_arg_input(layer.inputs, arg2val_map, input_nodes, 
+                    blocks[0], self._device, self._use_uva)
                 t2 = time.time()
                 b += t2-t1
 
                 output_vals = func(*new_args)
                 t3 = time.time()
                 c += t3-t2
-                # print(blocks[0], "; max memory = ", torch.cuda.max_memory_allocated() // 1024 ** 2, "GB")
+                print(blocks[0], "; max memory = ", torch.cuda.max_memory_allocated() // 1024 ** 2, "MB")
                 del new_args
 
                 rets = update_ret_output(output_vals, rets, input_nodes, output_nodes, blocks)
@@ -210,6 +225,7 @@ class AutoInferenceHelper(InferenceHelperBase):
 
             except Exception as e:
                 print(e)
+                t4 = time.time()
                 nxt_max_node, nxt_max_edge = auto_tunner.break_peak(blocks[0])
                 dataloader.reset_batch_node(output_nodes.shape[0])
                 gc.collect()

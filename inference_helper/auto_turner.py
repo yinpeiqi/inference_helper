@@ -10,6 +10,9 @@ def get_memory_in_MiB():
 
 class AutoTurner:
     def __init__(self):
+        self.set_free()
+
+    def set_free(self):
         info = get_memory_in_MiB()
         self.free_memory = info.free * 0.9 // 1024 ** 2
 

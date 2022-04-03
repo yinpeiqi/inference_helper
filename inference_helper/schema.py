@@ -90,4 +90,6 @@ class ArgNode():
         self.input_layers.append(layer)
     
     def __str__(self):
-        return "{}, input: {}, output: {}".format(self.name, [layer.id for layer in self.input_layers], self.output_layer)
+        return "{}, input: {}, output: {}".format(self.name,
+                                                  [layer.id for layer in self.input_layers],
+                                                  self.output_layer)

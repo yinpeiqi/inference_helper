@@ -19,13 +19,16 @@ def arg_trace(a):
     return ret
 
 
-def get_new_arg_input(inputs, arg2val_map, input_nodes, inference_graph, device):
+def get_new_arg_input(inputs, arg2val_map, input_nodes, inference_graph, device, pre_fetched=False):
     new_args = ()
     for arg_node in inputs:
         if arg_node not in arg2val_map:
             raise RuntimeError("schema not match with output.")
         if isinstance(arg2val_map[arg_node], torch.Tensor):
-            new_args += (arg2val_map[arg_node][input_nodes].to(device),)
+            if pre_fetched:
+                new_args += (inference_graph.srcdata[arg_node.name].to(device),)
+            else:
+                new_args += (arg2val_map[arg_node][input_nodes].to(device),)
         elif isinstance(arg2val_map[arg_node], DGLHeteroGraph):
             new_args += (inference_graph.to(device),)
         elif hasattr(arg2val_map[arg_node], "to"):

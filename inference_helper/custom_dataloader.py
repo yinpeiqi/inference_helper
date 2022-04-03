@@ -17,7 +17,7 @@ def _divide_by_worker(dataset):
     return dataset
 
 class CustomDataloader(dgl.dataloading.NodeDataLoader):
-    def __init__(self, g, nids, sampler, start_max_node=1000, start_max_edge=10000, device='cpu', shuffle=False, drop_last=False, num_workers=0):
+    def __init__(self, g, nids, sampler, start_max_node=1000, start_max_edge=10000, device='cpu', shuffle=False, drop_last=False, use_uva=False, num_workers=0):
 
         custom_dataset = CustomDataset(start_max_node, start_max_edge, g, nids)
         sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
@@ -25,6 +25,7 @@ class CustomDataloader(dgl.dataloading.NodeDataLoader):
                          custom_dataset,
                          sampler,
                          device=device,
+                         use_uva=use_uva,
                          shuffle=shuffle,
                          drop_last=drop_last,
                          num_workers=num_workers)
@@ -54,7 +55,7 @@ class CustomDataset(dgl.dataloading.TensorizedDataset):
         self.max_edge = max_edge
         self.ori_indegrees = in_degrees
         if in_degrees is None:
-            self.ori_indegrees = g.in_degrees(train_nids)
+            self.ori_indegrees = g.in_degrees(train_nids.to(g.device))
         # move __iter__ to here
         indices = _divide_by_worker(train_nids)
         id_tensor = self._id_tensor[indices.to(self._device)]
@@ -92,6 +93,7 @@ class CustomDatasetIter(_TensorizedDatasetIter):
         return end_idx
 
     def _next_indices(self):
+        print(self.max_node, self.max_edge, self.index)
         num_items = self.dataset.shape[0]
         if self.index >= num_items:
             raise StopIteration

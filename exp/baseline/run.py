@@ -118,7 +118,7 @@ def train(args):
             st = time.time()
             # helper = EdgeControlInferenceHelper(model, 2621440, torch.device('cuda'), debug = False)
             # helper = InferenceHelper(model, 2000, torch.device('cuda'), debug = False)
-            helper = AutoInferenceHelper(model, torch.device(device), debug = args.debug)
+            helper = AutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, debug = args.debug)
             helper_pred = helper.inference(g, feat)
             helper_score = (torch.argmax(helper_pred, dim=1) == labels).float().sum() / len(helper_pred)
             cost_time = time.time() - st
@@ -139,6 +139,7 @@ def train(args):
 
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
+    argparser.add_argument('--use-uva', action="store_true")
     argparser.add_argument('--cpu', action="store_true")
     argparser.add_argument('--gpu', type=int, default=0,
                            help="GPU device ID. Use -1 for CPU training")

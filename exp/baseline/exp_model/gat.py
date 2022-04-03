@@ -59,17 +59,19 @@ class GAT(nn.Module):
                 y = th.zeros(g.number_of_nodes(), self.heads[l] * self.hidden_features)
             else:
                 y = th.zeros(g.number_of_nodes(), self.out_features)
-            sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
+            g.ndata['feat'] = x
+            sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1, prefetch_node_feats=['feat'])
             dataloader = dgl.dataloading.NodeDataLoader(
-                g, th.arange(g.number_of_nodes()), sampler,
+                g, th.arange(g.number_of_nodes()).to(device), sampler,
                 batch_size=batch_size,
                 shuffle=False,
                 drop_last=False,
+                use_uva=True,
                 device=device,
                 num_workers=0)
-
             memorys = []
             a, b, c, d, e = 0, 0, 0, 0, 0
+            x0, x1, x2 = 0, 0, 0
             import time
             t0 = time.time()
             # for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
@@ -81,9 +83,18 @@ class GAT(nn.Module):
                 t2 = time.time()
                 e += t2-t1
                 
+                ttt = time.time()
                 block = blocks[0].to(device)
-                h = x[input_nodes].to(device)
+                tttt = time.time()
+                x0 += tttt-ttt
+                # print(input_nodes, input_nodes.shape)
+                h = block.srcdata['feat']
+                # print(h.device)
+                t22 = time.time()
+                x1 += t22 - tttt
+                h = h.to(device)
                 t3 = time.time()
+                x2 += t3-t22
                 b += t3-t2
 
                 h = layer(block, h)
@@ -103,5 +114,6 @@ class GAT(nn.Module):
             x = y
             # print(memorys)
             print(a, b, c, d, e)
+            print(x0, x1, x2)
         # print("memory: ", torch.cuda.max_memory_allocated() // 1024 ** 2)
         return y
