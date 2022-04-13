@@ -26,6 +26,6 @@ class AutoTurner:
         return curr_node, curr_edge
 
     def break_peak(self, g):
-        curr_node = g.number_of_nodes()
+        curr_node = g.number_of_dst_nodes()
         curr_edge = g.num_edges()
         return curr_node // 2, curr_edge // 2

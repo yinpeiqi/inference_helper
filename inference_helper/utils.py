@@ -2,7 +2,7 @@ from torch.fx import Node
 
 import torch
 from dgl import DGLHeteroGraph
-
+from dgl.utils import gather_pinned_tensor_rows
 
 def arg_trace(a):
     ret = set()
@@ -19,14 +19,14 @@ def arg_trace(a):
     return ret
 
 
-def get_new_arg_input(inputs, arg2val_map, input_nodes, inference_graph, device, pre_fetched=False):
+def get_new_arg_input(inputs, arg2val_map, input_nodes, inference_graph, device, use_uva=False):
     new_args = ()
     for arg_node in inputs:
         if arg_node not in arg2val_map:
             raise RuntimeError("schema not match with output.")
         if isinstance(arg2val_map[arg_node], torch.Tensor):
-            if pre_fetched:
-                new_args += (inference_graph.srcdata[arg_node.name].to(device),)
+            if use_uva:
+                new_args += (gather_pinned_tensor_rows(arg2val_map[arg_node], input_nodes),)
             else:
                 new_args += (arg2val_map[arg_node][input_nodes].to(device),)
         elif isinstance(arg2val_map[arg_node], DGLHeteroGraph):

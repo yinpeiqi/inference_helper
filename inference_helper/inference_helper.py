@@ -8,7 +8,7 @@ from .auto_turner import AutoTurner
 from .function_generator import FunctionGenerator
 from .custom_dataloader import CustomDataloader
 from .utils import get_new_arg_input, update_ret_output
-
+from dgl.utils import pin_memory_inplace, unpin_memory_inplace
 
 class InferenceHelperBase():
     def __init__(self, module: nn.Module, device, use_uva = False, debug = False):
@@ -20,12 +20,19 @@ class InferenceHelperBase():
         self._schema = self._function_generator.get_schema()
         self._funcs = self._function_generator.get_funcs()
 
-    def set_ndata(self, layer, graph, arg2val_map):
+    def pin_data_inplace(self, layer, arg2val_map):
         for arg_node in layer.inputs:
             if arg_node not in arg2val_map:
                 raise RuntimeError("schema not match with output.")
             if isinstance(arg2val_map[arg_node], torch.Tensor):
-                graph.ndata[arg_node.name] = arg2val_map[arg_node]
+                pin_memory_inplace(arg2val_map[arg_node])
+
+    def unpin_data_inplace(self, layer, arg2val_map):
+        for arg_node in layer.inputs:
+            if arg_node not in arg2val_map:
+                raise RuntimeError("schema not match with output.")
+            if isinstance(arg2val_map[arg_node], torch.Tensor):
+                unpin_memory_inplace(arg2val_map[arg_node])
 
     def _trace_output_shape(self, arg2val_map):
         ret_shapes = [[] for _ in range(self._schema.layers_count)]
@@ -57,6 +64,10 @@ class InferenceHelperBase():
 
     def inference(self, inference_graph, *args):
         self.before_inference(inference_graph, *args)
+        for k in list(inference_graph.ndata.keys()):
+            inference_graph.ndata.pop(k)
+        for k in list(inference_graph.edata.keys()):
+            inference_graph.edata.pop(k)
 
         first_layer_inputs = (inference_graph,) + tuple(args)
         if len(first_layer_inputs) != len(self._schema.first_layer_input):
@@ -177,7 +188,8 @@ class AutoInferenceHelper(InferenceHelperBase):
         nids = torch.arange(graph.number_of_nodes()).to(graph.device)
         if self._use_uva:
             nids = nids.to(self._device)
-            self.set_ndata(layer, graph, arg2val_map)
+            self.pin_data_inplace(layer, arg2val_map)
+            graph.unpin_memory_()
 
         sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
         dataloader = CustomDataloader(
@@ -240,4 +252,6 @@ class AutoInferenceHelper(InferenceHelperBase):
         # print(memorys)
         print(a, b, c, d, e1)
         # print("maximum memory allocated: ", max_memory)
+        if self._use_uva:
+            self.unpin_data_inplace(layer, arg2val_map)
         return rets
