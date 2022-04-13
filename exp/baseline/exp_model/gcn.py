@@ -18,9 +18,15 @@ class StochasticTwoLayerGCN(nn.Module):
         self.convs.append(dgl.nn.GraphConv(hidden_features, out_features))
 
     def forward(self, blocks, x):
+        for i, conv in enumerate(self.convs):
+            x_dst = x[:blocks[i].number_of_dst_nodes()]
+            x = F.relu(conv(blocks[i], (x, x_dst)))
+        return x
+
+    def forward_full(self, blocks, x):
         for conv in self.convs:
-            x_dst = x[:blocks[0].number_of_dst_nodes()]
-            x = F.relu(conv(blocks[0], (x, x_dst)))
+            x_dst = x[:blocks.number_of_dst_nodes()]
+            x = F.relu(conv(blocks, (x, x_dst)))
         return x
 
     def inference(self, g, batch_size, device, x):
@@ -39,6 +45,7 @@ class StochasticTwoLayerGCN(nn.Module):
                 batch_size=batch_size,
                 shuffle=False,
                 drop_last=False,
+                device=torch.device('cuda'),
                 num_workers=0)
 
             # Within a layer, iterate over nodes in batches

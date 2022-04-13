@@ -50,6 +50,14 @@ class GAT(nn.Module):
         logits = self.gat_layers[-1](g[-1], h).mean(1)
         return logits
 
+    def forward_full(self, g, inputs):
+        h = inputs
+        for l in range(self.num_layers - 1):
+            h = self.gat_layers[l](g, h).flatten(1)
+        # output projection
+        logits = self.gat_layers[-1](g, h).mean(1)
+        return logits
+
     def inference(self, g, batch_size, device, x):
         torch.cuda.reset_peak_memory_stats()
         for l, layer in enumerate(self.gat_layers):

@@ -21,6 +21,7 @@ def load_reddit():
     return g, data.num_classes
 
 def load_ogb(name):
+    st = time.time()
     from ogb.nodeproppred import DglNodePropPredDataset
     data = DglNodePropPredDataset(name=name)
     splitted_idx = data.get_idx_split()
@@ -28,6 +29,9 @@ def load_ogb(name):
     graph = dgl.add_self_loop(graph)
     labels = labels[:, 0]
 
+    print(graph)
+    if name == "ogbn-papers100M":
+        print(time.time()-st)
     graph.ndata['features'] = graph.ndata['feat']
     graph.ndata['label'] = labels
     in_feats = graph.ndata['features'].shape[1]
@@ -103,11 +107,19 @@ def train(args):
             break
 
     with torch.no_grad():
-        if args.cpu:
+        if args.gpufull:
+            print(args.num_layers, args.model, "GPU FULL", args.dataset, args.num_heads, args.num_hidden)
+            st = time.time()
+            pred = model.forward_full(g.to(device), feat.to(device))
+            func_score = (torch.argmax(pred, dim=1) == labels.to(device)).float().sum() / len(pred)
+            cost_time = time.time() - st
+            print("CPU Inference: {}, inference time: {}".format(func_score, cost_time))
+
+        elif args.cpufull:
             print(args.num_layers, args.model, "CPU FULL", args.dataset, args.num_heads, args.num_hidden)
             st = time.time()
             model.to('cpu')
-            pred = model([g for _ in range(args.num_layers)], feat)
+            pred = model.forward_full(g, feat)
             model.to(device)
             func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
             cost_time = time.time() - st
@@ -119,6 +131,8 @@ def train(args):
             # helper = EdgeControlInferenceHelper(model, 2621440, torch.device('cuda'), debug = False)
             # helper = InferenceHelper(model, 2000, torch.device('cuda'), debug = False)
             helper = AutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, debug = args.debug)
+            # import pdb
+            # pdb.set_trace()
             helper_pred = helper.inference(g, feat)
             helper_score = (torch.argmax(helper_pred, dim=1) == labels).float().sum() / len(helper_pred)
             cost_time = time.time() - st
@@ -140,7 +154,8 @@ def train(args):
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
     argparser.add_argument('--use-uva', action="store_true")
-    argparser.add_argument('--cpu', action="store_true")
+    argparser.add_argument('--cpufull', action="store_true")
+    argparser.add_argument('--gpufull', action="store_true")
     argparser.add_argument('--gpu', type=int, default=0,
                            help="GPU device ID. Use -1 for CPU training")
     argparser.add_argument('--model', type=str, default='GCN')
