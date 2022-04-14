@@ -1,18 +1,18 @@
 import pynvml
 import torch
 
-def get_auto_turner(device):
+def get_auto_tuner(device):
     if isinstance(device, torch.device):
         device = device.type
     if 'cuda' in device:
-        return GPUAutoTurner()
+        return GPUAutoTuner()
     elif 'cpu' in device:
-        return CPUAutoTurner()
+        return CPUAutoTuner()
     else:
-        raise NotImplementedError("Not implement Auto Turner for device: {}.".format(device))
+        raise NotImplementedError("Not implement Auto Tuner for device: {}.".format(device))
 
 
-class AutoTurnerBase:
+class AutoTunerBase:
     def __init__(self):
         self.free_memory = 0
         self.set_free()
@@ -37,7 +37,7 @@ class AutoTurnerBase:
         return curr_node // 2, curr_edge // 2
 
 
-class GPUAutoTurner(AutoTurnerBase):
+class GPUAutoTuner(AutoTunerBase):
     def set_free(self):
         pynvml.nvmlInit()
         handle = pynvml.nvmlDeviceGetHandleByIndex(0)
@@ -48,7 +48,7 @@ class GPUAutoTurner(AutoTurnerBase):
         return torch.cuda.max_memory_allocated()
 
 
-class CPUAutoTurner(AutoTurnerBase):
+class CPUAutoTuner(AutoTunerBase):
     def set_free(self):
         raise NotImplementedError
 
