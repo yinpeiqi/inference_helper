@@ -4,7 +4,7 @@ import torch.nn as nn
 import tqdm
 import gc
 
-from .auto_turner import get_auto_turner
+from .auto_tuner import get_auto_tuner
 from .function_generator import FunctionGenerator
 from .custom_dataloader import CustomDataloader
 from .utils import get_new_arg_input, update_ret_output
@@ -181,7 +181,7 @@ class AutoInferenceHelper(InferenceHelperBase):
         super().__init__(module, device, use_uva, debug)
 
     def compute(self, graph, rets, arg2val_map, layer, func):
-        auto_turner = get_auto_turner(self._device)
+        auto_tuner = get_auto_tuner(self._device)
         start_max_node = 1000
         start_max_edge = 10000
 
@@ -213,7 +213,7 @@ class AutoInferenceHelper(InferenceHelperBase):
             t1 = time.time()
             a += t1-t0
             try:
-                auto_turner.set_free()
+                auto_tuner.set_free()
                 torch.cuda.reset_peak_memory_stats()
                 new_args = get_new_arg_input(layer.inputs, arg2val_map, input_nodes, 
                     blocks[0], self._device, self._use_uva)
@@ -230,7 +230,7 @@ class AutoInferenceHelper(InferenceHelperBase):
                 t4 = time.time()
                 d += t4-t3
                 del output_vals
-                nxt_max_node, nxt_max_edge = auto_turner.search(blocks[0])
+                nxt_max_node, nxt_max_edge = auto_tuner.search(blocks[0])
                 memorys.append(torch.cuda.max_memory_allocated() // 1024 ** 2)
                 max_memory = max(torch.cuda.max_memory_allocated() // 1024 ** 2, max_memory)
                 # pbar.update(output_nodes.shape[0])
@@ -238,7 +238,7 @@ class AutoInferenceHelper(InferenceHelperBase):
             except Exception as e:
                 print(e)
                 t4 = time.time()
-                nxt_max_node, nxt_max_edge = auto_turner.break_peak(blocks[0])
+                nxt_max_node, nxt_max_edge = auto_tuner.break_peak(blocks[0])
                 dataloader.reset_batch_node(output_nodes.shape[0])
                 gc.collect()
 
