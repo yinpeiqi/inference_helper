@@ -181,15 +181,14 @@ class AutoInferenceHelper(InferenceHelperBase):
         super().__init__(module, device, use_uva, debug)
 
     def compute(self, graph, rets, arg2val_map, layer, func):
-        auto_tuner = get_auto_tuner(self._device)
-        start_max_node = 1000
-        start_max_edge = 10000
+        auto_tuner = get_auto_tuner(self._device, graph)
+        start_max_node = 2000
+        start_max_edge = 500000
 
         nids = torch.arange(graph.number_of_nodes()).to(graph.device)
         if self._use_uva:
             nids = nids.to(self._device)
             self.pin_data_inplace(layer, arg2val_map)
-            graph.unpin_memory_()
 
         sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
         dataloader = CustomDataloader(
