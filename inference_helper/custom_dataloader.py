@@ -28,6 +28,7 @@ class CustomDataloader(dgl.dataloading.NodeDataLoader):
                          use_uva=use_uva,
                          shuffle=shuffle,
                          drop_last=drop_last,
+                         use_prefetch_thread=False,
                          num_workers=num_workers)
 
     def modify_max_edge(self, max_edge):
@@ -93,7 +94,6 @@ class CustomDatasetIter(_TensorizedDatasetIter):
         return end_idx
 
     def _next_indices(self):
-        print(self.max_node, self.max_edge, self.index)
         num_items = self.dataset.shape[0]
         if self.index >= num_items:
             raise StopIteration

@@ -144,7 +144,7 @@ def train(args):
             else:
                 print(args.num_layers, args.model, "GPU", args.batch_size, args.dataset, args.num_heads, args.num_hidden)
             st = time.time()
-            pred = model.inference(g, args.batch_size, torch.device(device), feat)
+            pred = model.inference(g, args.batch_size, torch.device(device), feat, args.use_uva)
             func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
             cost_time = time.time() - st
             if args.gpu != -1:

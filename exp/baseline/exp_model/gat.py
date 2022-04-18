@@ -6,6 +6,7 @@ import gc
 import dgl
 from dgl.nn import GATConv
 import tqdm
+from dgl.utils import pin_memory_inplace, unpin_memory_inplace, gather_pinned_tensor_rows
 
 
 class GAT(nn.Module):
@@ -58,7 +59,13 @@ class GAT(nn.Module):
         logits = self.gat_layers[-1](g, h).mean(1)
         return logits
 
-    def inference(self, g, batch_size, device, x):
+    def inference(self, g, batch_size, device, x, use_uva = False):
+        if use_uva:
+            for k in list(g.ndata.keys()):
+                g.ndata.pop(k)
+            for k in list(g.edata.keys()):
+                g.edata.pop(k)
+
         torch.cuda.reset_peak_memory_stats()
         for l, layer in enumerate(self.gat_layers):
             gc.collect()
@@ -67,42 +74,39 @@ class GAT(nn.Module):
                 y = th.zeros(g.number_of_nodes(), self.heads[l] * self.hidden_features)
             else:
                 y = th.zeros(g.number_of_nodes(), self.out_features)
-            g.ndata['feat'] = x
-            sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1, prefetch_node_feats=['feat'])
+
+            nids = th.arange(g.number_of_nodes()).to(g.device)
+            if use_uva:
+                pin_memory_inplace(x)
+                nids = nids.to(device)
+            sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
             dataloader = dgl.dataloading.NodeDataLoader(
-                g, th.arange(g.number_of_nodes()).to(device), sampler,
+                g, nids, sampler,
                 batch_size=batch_size,
                 shuffle=False,
                 drop_last=False,
-                use_uva=True,
+                use_uva=use_uva,
                 device=device,
                 num_workers=0)
             memorys = []
             a, b, c, d, e = 0, 0, 0, 0, 0
-            x0, x1, x2 = 0, 0, 0
             import time
             t0 = time.time()
             # for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
             for input_nodes, output_nodes, blocks in dataloader:
                 t1 = time.time()
                 a += t1-t0
-                torch.cuda.reset_peak_memory_stats()
+                # torch.cuda.reset_peak_memory_stats()
                 th.cuda.empty_cache()
                 t2 = time.time()
                 e += t2-t1
-                
-                ttt = time.time()
+
                 block = blocks[0].to(device)
-                tttt = time.time()
-                x0 += tttt-ttt
-                # print(input_nodes, input_nodes.shape)
-                h = block.srcdata['feat']
-                # print(h.device)
-                t22 = time.time()
-                x1 += t22 - tttt
-                h = h.to(device)
+                if use_uva:
+                    h = gather_pinned_tensor_rows(x, input_nodes)
+                else:
+                    h = x[input_nodes].to(device)
                 t3 = time.time()
-                x2 += t3-t22
                 b += t3-t2
 
                 h = layer(block, h)
@@ -119,9 +123,10 @@ class GAT(nn.Module):
                 t0 = time.time()
                 d += t0-t4
                 memorys.append(torch.cuda.max_memory_allocated() // 1024 ** 2)
+            if use_uva:
+                unpin_memory_inplace(x)
             x = y
             # print(memorys)
             print(a, b, c, d, e)
-            print(x0, x1, x2)
         # print("memory: ", torch.cuda.max_memory_allocated() // 1024 ** 2)
         return y

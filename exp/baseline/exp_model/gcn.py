@@ -3,6 +3,7 @@ import dgl
 import torch.nn as nn
 import torch.nn.functional as F
 import tqdm
+from dgl.utils import pin_memory_inplace, unpin_memory_inplace, gather_pinned_tensor_rows
 
 
 class StochasticTwoLayerGCN(nn.Module):
@@ -29,7 +30,13 @@ class StochasticTwoLayerGCN(nn.Module):
             x = F.relu(conv(blocks, (x, x_dst)))
         return x
 
-    def inference(self, g, batch_size, device, x):
+    def inference(self, g, batch_size, device, x, use_uva = False):
+        if use_uva:
+            for k in list(g.ndata.keys()):
+                g.ndata.pop(k)
+            for k in list(g.edata.keys()):
+                g.edata.pop(k)
+
         """
         Offline inference with this module
         """
@@ -39,9 +46,14 @@ class StochasticTwoLayerGCN(nn.Module):
                             self.hidden_features
                             if l != self.n_layers - 1
                             else self.out_features)
+            
+            nids = torch.arange(g.number_of_nodes()).to(g.device)
+            if use_uva:
+                pin_memory_inplace(x)
+                nids = nids.to(device)
             sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
             dataloader = dgl.dataloading.NodeDataLoader(
-                g, torch.arange(g.number_of_nodes()), sampler,
+                g, nids, sampler,
                 batch_size=batch_size,
                 shuffle=False,
                 drop_last=False,
@@ -53,7 +65,10 @@ class StochasticTwoLayerGCN(nn.Module):
                 block = blocks[0].to(device)
 
                 # Copy the features of necessary input nodes to GPU
-                h = x[input_nodes].to(device)
+                if self.use_uva:
+                    h = gather_pinned_tensor_rows(x, input_nodes)
+                else:
+                    h = x[input_nodes].to(device)
                 # Compute output.  Note that this computation is the same
                 # but only for a single layer.
                 h_dst = h[:block.number_of_dst_nodes()]
@@ -61,6 +76,8 @@ class StochasticTwoLayerGCN(nn.Module):
                 # Copy to output back to CPU.
                 y[output_nodes] = h.cpu()
 
+            if use_uva:
+                unpin_memory_inplace(x)
             x = y
 
         return y
