@@ -90,6 +90,9 @@ class InferenceHelperBase():
                 else:
                     rets.append(None)
 
+            for ret, arg_node in zip(rets, layer.outputs):
+                arg2val_map[arg_node] = ret
+
             gc.collect()
             torch.cuda.empty_cache()
             rets = self.compute(inference_graph, rets, arg2val_map, layer, func)
@@ -98,9 +101,6 @@ class InferenceHelperBase():
             for arg_node in layer.inputs:
                 if arg_node.input_layers[-1] == layer and arg_node.input_layers[0] != self._schema.get_layer(0):
                     del arg2val_map[arg_node]
-
-            for ret, arg_node in zip(rets, layer.outputs):
-                arg2val_map[arg_node] = ret
 
         outputs = ()
         for name in self._schema.last_layer_output:
