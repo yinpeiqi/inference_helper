@@ -95,7 +95,13 @@ class InferenceHelperBase():
 
             gc.collect()
             torch.cuda.empty_cache()
+            if self._use_uva:
+                self.pin_data_inplace(layer, arg2val_map)
+
             rets = self.compute(inference_graph, rets, arg2val_map, layer, func)
+
+            if self._use_uva:
+                self.unpin_data_inplace(layer, arg2val_map)
 
             # delete intermediate val
             for arg_node in layer.inputs:
@@ -188,7 +194,6 @@ class AutoInferenceHelper(InferenceHelperBase):
         nids = torch.arange(graph.number_of_nodes()).to(graph.device)
         if self._use_uva:
             nids = nids.to(self._device)
-            self.pin_data_inplace(layer, arg2val_map)
 
         sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
         dataloader = CustomDataloader(
@@ -251,6 +256,4 @@ class AutoInferenceHelper(InferenceHelperBase):
         # print(memorys)
         print(a, b, c, d, e1)
         # print("maximum memory allocated: ", max_memory)
-        if self._use_uva:
-            self.unpin_data_inplace(layer, arg2val_map)
         return rets
