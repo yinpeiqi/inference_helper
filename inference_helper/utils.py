@@ -19,24 +19,22 @@ def arg_trace(a):
     return ret
 
 
-def get_new_arg_input(inputs, arg2val_map, input_nodes, inference_graph, device, use_uva=False):
+def get_new_arg_input(inputs, data_map, input_nodes, inference_graph, device, use_uva=False):
     new_args = ()
     for arg_node in inputs:
-        if arg_node not in arg2val_map:
-            raise RuntimeError("schema not match with output.")
-        if isinstance(arg2val_map[arg_node], torch.Tensor):
-            if arg2val_map[arg_node].device == device:
-                new_args += (arg2val_map[arg_node][input_nodes],)
+        if isinstance(data_map[arg_node], torch.Tensor):
+            if data_map[arg_node].device == device:
+                new_args += (data_map[arg_node][input_nodes],)
             elif use_uva:
-                new_args += (gather_pinned_tensor_rows(arg2val_map[arg_node], input_nodes),)
+                new_args += (gather_pinned_tensor_rows(data_map[arg_node], input_nodes),)
             else:
-                new_args += (arg2val_map[arg_node][input_nodes].to(device),)
-        elif isinstance(arg2val_map[arg_node], DGLHeteroGraph):
+                new_args += (data_map[arg_node][input_nodes].to(device),)
+        elif isinstance(data_map[arg_node], DGLHeteroGraph):
             new_args += (inference_graph.to(device),)
-        elif hasattr(arg2val_map[arg_node], "to"):
-            new_args += (arg2val_map[arg_node].to(device),)
+        elif hasattr(data_map[arg_node], "to"):
+            new_args += (data_map[arg_node].to(device),)
         else:
-            new_args += (arg2val_map[arg_node],)
+            new_args += (data_map[arg_node],)
     return new_args
 
 def update_ret_output(output_vals, rets, input_nodes, output_nodes, blocks):

@@ -6,6 +6,7 @@ import gc
 
 from .auto_tuner import get_auto_tuner
 from .function_generator import FunctionGenerator
+from .data_manager import DataManager
 from .custom_dataloader import CustomDataloader
 from .utils import get_new_arg_input, update_ret_output
 from dgl.utils import pin_memory_inplace, unpin_memory_inplace
@@ -19,20 +20,17 @@ class InferenceHelperBase():
         self._traced = self._function_generator.traced
         self._schema = self._function_generator.get_schema()
         self._funcs = self._function_generator.get_funcs()
+        self._data_manager = DataManager(device, use_uva)
 
-    def pin_data_inplace(self, layer, arg2val_map):
+    def pin_data_inplace(self, layer):
         for arg_node in layer.inputs:
-            if arg_node not in arg2val_map:
-                raise RuntimeError("schema not match with output.")
-            if isinstance(arg2val_map[arg_node], torch.Tensor):
-                pin_memory_inplace(arg2val_map[arg_node])
+            if isinstance(self._data_manager[arg_node], torch.Tensor):
+                pin_memory_inplace(self._data_manager[arg_node])
 
-    def unpin_data_inplace(self, layer, arg2val_map):
+    def unpin_data_inplace(self, layer):
         for arg_node in layer.inputs:
-            if arg_node not in arg2val_map:
-                raise RuntimeError("schema not match with output.")
-            if isinstance(arg2val_map[arg_node], torch.Tensor):
-                unpin_memory_inplace(arg2val_map[arg_node])
+            if isinstance(self._data_manager[arg_node], torch.Tensor):
+                unpin_memory_inplace(self._data_manager[arg_node])
 
     def _trace_output_shape(self, arg2val_map):
         ret_shapes = [[] for _ in range(self._schema.layers_count)]
@@ -53,7 +51,7 @@ class InferenceHelperBase():
                     ret_shapes[layer.id].append((val.__class__, None))
         return ret_shapes
 
-    def compute(self, inference_graph, rets, arg2val_map, layer, func):
+    def compute(self, inference_graph, rets, layer, func):
         raise NotImplementedError()
 
     def before_inference(self, graph, *args):
@@ -72,11 +70,13 @@ class InferenceHelperBase():
         first_layer_inputs = (inference_graph,) + tuple(args)
         if len(first_layer_inputs) != len(self._schema.first_layer_input):
             raise Exception("layer's input not match with args.")
-        arg2val_map = {}
+        arg2val_map = {} # this arg2val map only used for trace the output shape
         for val, arg_name in zip(first_layer_inputs, self._schema.first_layer_input):
             arg_node = self._schema.name2arg_map[arg_name]
             arg2val_map[arg_node] = val
+            self._data_manager[arg_node] = val
         ret_shapes = self._trace_output_shape(arg2val_map)
+        del arg2val_map
 
         for layer, func in zip(self._schema.layers, self._funcs):
 
@@ -91,27 +91,27 @@ class InferenceHelperBase():
                     rets.append(None)
 
             for ret, arg_node in zip(rets, layer.outputs):
-                arg2val_map[arg_node] = ret
+                self._data_manager[arg_node] = ret
 
             gc.collect()
             torch.cuda.empty_cache()
             if self._use_uva:
-                self.pin_data_inplace(layer, arg2val_map)
+                self.pin_data_inplace(layer)
 
-            rets = self.compute(inference_graph, rets, arg2val_map, layer, func)
+            rets = self.compute(inference_graph, rets, layer, func)
 
             if self._use_uva:
-                self.unpin_data_inplace(layer, arg2val_map)
+                self.unpin_data_inplace(layer)
 
             # delete intermediate val
             for arg_node in layer.inputs:
                 if arg_node.input_layers[-1] == layer and arg_node.input_layers[0] != self._schema.get_layer(0):
-                    del arg2val_map[arg_node]
+                    del self._data_manager[arg_node]
 
         outputs = ()
         for name in self._schema.last_layer_output:
             arg_node = self._schema.name2arg_map[name]
-            outputs += (arg2val_map[arg_node],)
+            outputs += (self._data_manager[arg_node],)
 
         self.after_inference()
 
@@ -126,7 +126,7 @@ class InferenceHelper(InferenceHelperBase):
         self._batch_size = batch_size
         self._num_workers = num_workers
 
-    def compute(self, graph, rets, arg2val_map, layer, func):
+    def compute(self, graph, rets, layer, func):
         sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
         dataloader = dgl.dataloading.NodeDataLoader(
             graph,
@@ -139,7 +139,7 @@ class InferenceHelper(InferenceHelperBase):
             num_workers=self._num_workers)
 
         for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
-            new_args = get_new_arg_input(layer.inputs, arg2val_map, input_nodes, blocks[0], self._device)
+            new_args = get_new_arg_input(layer.inputs, self._data_manager, input_nodes, blocks[0], self._device)
 
             output_vals = func(*new_args)
             del new_args
@@ -156,7 +156,7 @@ class EdgeControlInferenceHelper(InferenceHelperBase):
         self._max_edge_in_batch = max_edge_in_batch
         self._num_workers = num_workers
 
-    def compute(self, graph, rets, arg2val_map, layer, func):
+    def compute(self, graph, rets, layer, func):
         sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
         dataloader = CustomDataloader(
             graph,
@@ -169,7 +169,7 @@ class EdgeControlInferenceHelper(InferenceHelperBase):
 
         pbar = tqdm.tqdm(total=graph.number_of_nodes())
         for input_nodes, output_nodes, blocks in dataloader:
-            new_args = get_new_arg_input(layer.inputs, arg2val_map, input_nodes, blocks[0], self._device)
+            new_args = get_new_arg_input(layer.inputs, self._data_manager, input_nodes, blocks[0], self._device)
 
             output_vals = func(*new_args)
             del new_args
@@ -186,7 +186,7 @@ class AutoInferenceHelper(InferenceHelperBase):
     def __init__(self, module: nn.Module, device, use_uva, debug = False):
         super().__init__(module, device, use_uva, debug)
 
-    def compute(self, graph, rets, arg2val_map, layer, func):
+    def compute(self, graph, rets, layer, func):
         auto_tuner = get_auto_tuner(self._device, graph)
         start_max_node = 2000
         start_max_edge = 500000
@@ -219,7 +219,7 @@ class AutoInferenceHelper(InferenceHelperBase):
             try:
                 auto_tuner.set_free()
                 torch.cuda.reset_peak_memory_stats()
-                new_args = get_new_arg_input(layer.inputs, arg2val_map, input_nodes, 
+                new_args = get_new_arg_input(layer.inputs, self._data_manager, input_nodes, 
                     blocks[0], self._device, self._use_uva)
                 t2 = time.time()
                 b += t2-t1
