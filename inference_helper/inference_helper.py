@@ -6,10 +6,9 @@ import gc
 
 from .auto_tuner import get_auto_tuner
 from .function_generator import FunctionGenerator
-from .data_manager import DataManager
+from .data_manager import AutoDataManager, DataManager
 from .custom_dataloader import CustomDataloader
 from .utils import get_new_arg_input, update_ret_output
-from dgl.utils import pin_memory_inplace, unpin_memory_inplace
 
 class InferenceHelperBase():
     def __init__(self, module: nn.Module, device, use_uva = False, debug = False):
@@ -21,16 +20,6 @@ class InferenceHelperBase():
         self._schema = self._function_generator.get_schema()
         self._funcs = self._function_generator.get_funcs()
         self._data_manager = DataManager(device, use_uva)
-
-    def pin_data_inplace(self, layer):
-        for arg_node in layer.inputs:
-            if isinstance(self._data_manager[arg_node], torch.Tensor):
-                pin_memory_inplace(self._data_manager[arg_node])
-
-    def unpin_data_inplace(self, layer):
-        for arg_node in layer.inputs:
-            if isinstance(self._data_manager[arg_node], torch.Tensor):
-                unpin_memory_inplace(self._data_manager[arg_node])
 
     def _trace_output_shape(self, arg2val_map):
         ret_shapes = [[] for _ in range(self._schema.layers_count)]
@@ -95,13 +84,8 @@ class InferenceHelperBase():
 
             gc.collect()
             torch.cuda.empty_cache()
-            if self._use_uva:
-                self.pin_data_inplace(layer)
 
             rets = self.compute(inference_graph, rets, layer, func)
-
-            if self._use_uva:
-                self.unpin_data_inplace(layer)
 
             # delete intermediate val
             for arg_node in layer.inputs:
@@ -187,13 +171,15 @@ class AutoInferenceHelper(InferenceHelperBase):
         super().__init__(module, device, use_uva, debug)
 
     def compute(self, graph, rets, layer, func):
-        auto_tuner = get_auto_tuner(self._device, graph)
-        start_max_node = 2000
-        start_max_edge = 500000
 
         nids = torch.arange(graph.number_of_nodes()).to(graph.device)
         if self._use_uva:
             nids = nids.to(self._device)
+            self._data_manager.pin_data_inplace(layer)
+
+        auto_tuner = get_auto_tuner(self._device)
+        start_max_node = 2000
+        start_max_edge = 500000
 
         sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
         dataloader = CustomDataloader(
@@ -212,11 +198,14 @@ class AutoInferenceHelper(InferenceHelperBase):
         memorys = []
         a, b, c, d, e1 = 0, 0, 0, 0, 0
         import time
+        sss = time.time()
         t0 = time.time()
+        tot_input = 0
         for input_nodes, output_nodes, blocks in dataloader:
             t1 = time.time()
             a += t1-t0
             try:
+                tot_input += input_nodes.shape[0]
                 auto_tuner.set_free()
                 torch.cuda.reset_peak_memory_stats()
                 new_args = get_new_arg_input(layer.inputs, self._data_manager, input_nodes, 
@@ -252,8 +241,15 @@ class AutoInferenceHelper(InferenceHelperBase):
                 torch.cuda.empty_cache()
                 t0 = time.time()
                 e1 += t0-t4
+
+        if self._use_uva:
+            self._data_manager.unpin_data_inplace(layer)
+
         # pbar.close()
         # print(memorys)
         print(a, b, c, d, e1)
+        print(tot_input)
+        print(time.time()-sss)
+        print(dataloader.dataset.curr_iter.tot)
         # print("maximum memory allocated: ", max_memory)
         return rets

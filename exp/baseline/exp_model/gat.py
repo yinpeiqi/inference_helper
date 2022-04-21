@@ -60,11 +60,10 @@ class GAT(nn.Module):
         return logits
 
     def inference(self, g, batch_size, device, x, use_uva = False):
-        if use_uva:
-            for k in list(g.ndata.keys()):
-                g.ndata.pop(k)
-            for k in list(g.edata.keys()):
-                g.edata.pop(k)
+        for k in list(g.ndata.keys()):
+            g.ndata.pop(k)
+        for k in list(g.edata.keys()):
+            g.edata.pop(k)
 
         torch.cuda.reset_peak_memory_stats()
         for l, layer in enumerate(self.gat_layers):
@@ -91,9 +90,13 @@ class GAT(nn.Module):
             memorys = []
             a, b, c, d, e = 0, 0, 0, 0, 0
             import time
+            sss = time.time()
             t0 = time.time()
             # for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
+            tot_input = 0
             for input_nodes, output_nodes, blocks in dataloader:
+                print(blocks)
+                tot_input += input_nodes.shape[0]
                 t1 = time.time()
                 a += t1-t0
                 # torch.cuda.reset_peak_memory_stats()
@@ -128,5 +131,7 @@ class GAT(nn.Module):
             x = y
             # print(memorys)
             print(a, b, c, d, e)
+            print("tot:", tot_input)
+            print(time.time()- sss)
         # print("memory: ", torch.cuda.max_memory_allocated() // 1024 ** 2)
         return y

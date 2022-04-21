@@ -12,6 +12,7 @@ from exp_model.gat import  GAT
 from exp_model.jknet import JKNet
 from dgl.data import CiteseerGraphDataset, RedditDataset
 from inference_helper import InferenceHelper, EdgeControlInferenceHelper, AutoInferenceHelper
+from dgl.utils import pin_memory_inplace, unpin_memory_inplace, gather_pinned_tensor_rows
 
 def load_reddit():
     from dgl.data import RedditDataset
@@ -107,12 +108,31 @@ def train(args):
             break
 
     with torch.no_grad():
+        if args.topdown:
+            print(args.num_layers, args.model, "TOP DOWN", args.batch_size, args.dataset, args.num_heads, args.num_hidden)
+            st = time.time()
+            nids = torch.arange(g.number_of_nodes()).to(g.device)
+            sampler = dgl.dataloading.MultiLayerFullNeighborSampler(args.num_layers)
+            dataloader = dgl.dataloading.NodeDataLoader(
+                g, nids, sampler, batch_size=args.batch_size, 
+                shuffle=False, drop_last=False, use_uva=False, device=device, num_workers=0)
+            pred = torch.zeros(g.number_of_nodes(), model.out_features)
+            pin_memory_inplace(feat)
+            for input_nodes, output_nodes, blocks in dataloader:
+                print(blocks)
+                input_features = gather_pinned_tensor_rows(feat, input_nodes)
+                pred[output_nodes] = model(blocks, input_features).cpu()
+            unpin_memory_inplace(feat)
+            cost_time = time.time() - st
+            func_score = (torch.argmax(pred, dim=1) == labels.to(device)).float().sum() / len(pred)
+            print("TOP DOWN Inference: {}, inference time: {}".format(func_score, cost_time))
+
         if args.gpufull:
             print(args.num_layers, args.model, "GPU FULL", args.dataset, args.num_heads, args.num_hidden)
             st = time.time()
             pred = model.forward_full(g.to(device), feat.to(device))
-            func_score = (torch.argmax(pred, dim=1) == labels.to(device)).float().sum() / len(pred)
             cost_time = time.time() - st
+            func_score = (torch.argmax(pred, dim=1) == labels.to(device)).float().sum() / len(pred)
             print("CPU Inference: {}, inference time: {}".format(func_score, cost_time))
 
         elif args.cpufull:
@@ -121,8 +141,8 @@ def train(args):
             model.to('cpu')
             pred = model.forward_full(g, feat)
             model.to(device)
-            func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
             cost_time = time.time() - st
+            func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
             print("CPU Inference: {}, inference time: {}".format(func_score, cost_time))
 
         elif args.auto:
@@ -134,8 +154,8 @@ def train(args):
             # import pdb
             # pdb.set_trace()
             helper_pred = helper.inference(g, feat)
-            helper_score = (torch.argmax(helper_pred, dim=1) == labels).float().sum() / len(helper_pred)
             cost_time = time.time() - st
+            helper_score = (torch.argmax(helper_pred, dim=1) == labels).float().sum() / len(helper_pred)
             print("Helper Inference: {}, inference time: {}".format(helper_score, cost_time))
 
         else:
@@ -145,8 +165,8 @@ def train(args):
                 print(args.num_layers, args.model, "GPU", args.batch_size, args.dataset, args.num_heads, args.num_hidden)
             st = time.time()
             pred = model.inference(g, args.batch_size, torch.device(device), feat, args.use_uva)
-            func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
             cost_time = time.time() - st
+            func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
             if args.gpu != -1:
                 print("max memory:", torch.cuda.max_memory_allocated() // 1024 ** 2)
             print("Origin Inference: {}, inference time: {}".format(func_score, cost_time))
@@ -154,6 +174,7 @@ def train(args):
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
     argparser.add_argument('--use-uva', action="store_true")
+    argparser.add_argument('--topdown', action="store_true")
     argparser.add_argument('--cpufull', action="store_true")
     argparser.add_argument('--gpufull', action="store_true")
     argparser.add_argument('--gpu', type=int, default=0,
