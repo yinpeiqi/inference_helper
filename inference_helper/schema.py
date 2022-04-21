@@ -20,6 +20,8 @@ class Schema():
 
     def create_layer(self, graph):
         self.layers.append(GraphLayer(self))
+        if len(self.layers) != 1:
+            self.layers[-2].next_layer = self.curr_layer
         for node in graph.nodes:
             if node.op == PLACEHOLDER:
                 self.record_input(node.name)
@@ -71,6 +73,10 @@ class GraphLayer():
         self.id = schema.layers_count
         self.inputs: list[ArgNode] = []
         self.outputs: list[ArgNode] = []
+        self.next_layer = None
+
+    def next(self):
+        return self.next_layer
 
     def add_input(self, input_arg):
         self.inputs.append(input_arg)

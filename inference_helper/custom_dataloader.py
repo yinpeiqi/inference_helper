@@ -1,5 +1,6 @@
 from typing import Generic
 import functools
+import time
 
 import torch
 import dgl
@@ -17,9 +18,10 @@ def _divide_by_worker(dataset):
     return dataset
 
 class CustomDataloader(dgl.dataloading.NodeDataLoader):
-    def __init__(self, g, nids, sampler, start_max_node=1000, start_max_edge=10000, device='cpu', shuffle=False, drop_last=False, use_uva=False, num_workers=0):
+    def __init__(self, g, nids, sampler, start_max_node=1000, start_max_edge=10000, prefix_sum_in_degrees=None, \
+        device='cpu', shuffle=False, drop_last=False, use_uva=False, num_workers=0):
 
-        custom_dataset = CustomDataset(start_max_node, start_max_edge, g, nids)
+        custom_dataset = CustomDataset(start_max_node, start_max_edge, g, nids, prefix_sum_in_degrees)
         sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
         super().__init__(g,
                          custom_dataset,
@@ -49,24 +51,25 @@ class CustomDataloader(dgl.dataloading.NodeDataLoader):
         return super(Generic, self).__setattr__(__name, __value)
 
 class CustomDataset(dgl.dataloading.TensorizedDataset):
-    def __init__(self, max_node, max_edge, g, train_nids, in_degrees=None):
+    def __init__(self, max_node, max_edge, g, train_nids, prefix_sum_in_degrees=None):
         super().__init__(train_nids, max_node, False)
         self.device = train_nids.device
         self.max_node = max_node
         self.max_edge = max_edge
-        self.ori_indegrees = in_degrees
-        if in_degrees is None:
-            self.ori_indegrees = g.in_degrees(train_nids.to(g.device))
         # move __iter__ to here
-        indices = _divide_by_worker(train_nids)
-        id_tensor = self._id_tensor[indices.to(self._device)]
-        self.in_degrees = [0]
-        self.in_degrees.extend(self.ori_indegrees[indices].tolist())
-        for i in range(1, len(self.in_degrees)):
-            self.in_degrees[i] += self.in_degrees[i - 1]
-        self.in_degrees.append(2e18)
+        # TODO not support multi processing yet
+        # indices = _divide_by_worker(train_nids)
+        id_tensor = self._id_tensor[train_nids.to(self._device)]
+        self.prefix_sum_in_degrees = prefix_sum_in_degrees
+        if self.prefix_sum_in_degrees is None:
+            in_degrees = g.in_degrees(train_nids.to(g.device))
+            self.prefix_sum_in_degrees = [0]
+            self.prefix_sum_in_degrees.extend(in_degrees.tolist())
+            for i in range(1, len(self.in_degrees)):
+                self.prefix_sum_in_degrees[i] += self.prefix_sum_in_degrees[i - 1]
+            self.prefix_sum_in_degrees.append(2e18)
         self.curr_iter = CustomDatasetIter(
-            id_tensor, self.max_node, self.max_edge, self.in_degrees, self.drop_last, self._mapping_keys)
+            id_tensor, self.max_node, self.max_edge, self.prefix_sum_in_degrees, self.drop_last, self._mapping_keys)
 
     def __getattr__(self, attribute_name):
         if attribute_name in CustomDataset.functions:
@@ -79,25 +82,33 @@ class CustomDataset(dgl.dataloading.TensorizedDataset):
         return self.curr_iter
 
 class CustomDatasetIter(_TensorizedDatasetIter):
-    def __init__(self, dataset, max_node, max_edge, in_degrees, drop_last, mapping_keys):
+    def __init__(self, dataset, max_node, max_edge, prefix_sum_in_degrees, drop_last, mapping_keys):
         super().__init__(dataset, max_node, drop_last, mapping_keys)
         self.max_node = max_node
         self.max_edge = max_edge
-        self.in_degrees = in_degrees
+        self.prefix_sum_in_degrees = prefix_sum_in_degrees
+        self.tot = 0
+        self.num_item = self.dataset.shape[0]
 
     def get_end_idx(self):
-        # TODO(Peiqi): change it to logN algorithm
-        end_idx = self.index + 1
-        while self.in_degrees[end_idx + 1] - self.in_degrees[self.index] < self.max_edge and \
-            end_idx - self.index < self.max_node:
-            end_idx += 1
-        return end_idx
+        # binary search
+        binary_start = self.index + 1
+        binary_end = min(self.index + self.max_node, self.num_item)
+        binary_middle = (binary_start + binary_end) // 2
+        while binary_end - binary_start > 5:
+            if self.prefix_sum_in_degrees[binary_middle] - self.prefix_sum_in_degrees[self.index] < self.max_edge:
+                binary_start = binary_middle
+            else:
+                binary_end = binary_middle - 1
+            binary_middle = (binary_start + binary_end) // 2
+        return binary_middle
 
     def _next_indices(self):
-        num_items = self.dataset.shape[0]
-        if self.index >= num_items:
+        if self.index >= self.num_item:
             raise StopIteration
+        st = time.time()
         end_idx = self.get_end_idx()
+        self.tot += time.time()-st
         batch = self.dataset[self.index:end_idx]
         self.index = end_idx
         return batch

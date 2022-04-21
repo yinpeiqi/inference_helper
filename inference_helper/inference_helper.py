@@ -6,7 +6,7 @@ import gc
 
 from .auto_tuner import get_auto_tuner
 from .function_generator import FunctionGenerator
-from .data_manager import AutoDataManager, DataManager
+from .data_manager import DataManager
 from .custom_dataloader import CustomDataloader
 from .utils import get_new_arg_input, update_ret_output
 
@@ -170,11 +170,19 @@ class AutoInferenceHelper(InferenceHelperBase):
     def __init__(self, module: nn.Module, device, use_uva, debug = False):
         super().__init__(module, device, use_uva, debug)
 
+    def before_inference(self, graph, *args):
+        self.nids = torch.arange(graph.number_of_nodes()).to(graph.device)
+        in_degrees = graph.in_degrees(self.nids)
+        self.prefix_sum_in_degrees = [0]
+        self.prefix_sum_in_degrees.extend(in_degrees.tolist())
+        for i in range(1, len(in_degrees)):
+            self.prefix_sum_in_degrees[i] += self.prefix_sum_in_degrees[i - 1]
+        self.prefix_sum_in_degrees.append(2e18)
+
     def compute(self, graph, rets, layer, func):
 
-        nids = torch.arange(graph.number_of_nodes()).to(graph.device)
         if self._use_uva:
-            nids = nids.to(self._device)
+            self.nids = self.nids.to(self._device)
             self._data_manager.pin_data_inplace(layer)
 
         auto_tuner = get_auto_tuner(self._device)
@@ -184,10 +192,11 @@ class AutoInferenceHelper(InferenceHelperBase):
         sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
         dataloader = CustomDataloader(
             graph,
-            nids,
+            self.nids,
             sampler,
             start_max_node,
             start_max_edge,
+            self.prefix_sum_in_degrees,
             device=self._device,
             use_uva=self._use_uva,
             shuffle=False,
@@ -202,6 +211,7 @@ class AutoInferenceHelper(InferenceHelperBase):
         t0 = time.time()
         tot_input = 0
         for input_nodes, output_nodes, blocks in dataloader:
+            torch.cuda.synchronize()
             t1 = time.time()
             a += t1-t0
             try:
@@ -210,19 +220,22 @@ class AutoInferenceHelper(InferenceHelperBase):
                 torch.cuda.reset_peak_memory_stats()
                 new_args = get_new_arg_input(layer.inputs, self._data_manager, input_nodes, 
                     blocks[0], self._device, self._use_uva)
+                torch.cuda.synchronize()
                 t2 = time.time()
                 b += t2-t1
 
                 output_vals = func(*new_args)
+                torch.cuda.synchronize()
+                del new_args
                 t3 = time.time()
                 c += t3-t2
                 print(blocks[0], "; max memory = ", torch.cuda.max_memory_allocated() // 1024 ** 2, "MB")
-                del new_args
 
                 rets = update_ret_output(output_vals, rets, input_nodes, output_nodes, blocks)
+                torch.cuda.synchronize()
+                del output_vals
                 t4 = time.time()
                 d += t4-t3
-                del output_vals
                 nxt_max_node, nxt_max_edge = auto_tuner.search(blocks[0])
                 memorys.append(torch.cuda.max_memory_allocated() // 1024 ** 2)
                 max_memory = max(torch.cuda.max_memory_allocated() // 1024 ** 2, max_memory)
