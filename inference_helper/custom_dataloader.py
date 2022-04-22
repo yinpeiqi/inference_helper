@@ -1,6 +1,5 @@
 from typing import Generic
 import functools
-import time
 
 import torch
 import dgl
@@ -87,7 +86,6 @@ class CustomDatasetIter(_TensorizedDatasetIter):
         self.max_node = max_node
         self.max_edge = max_edge
         self.prefix_sum_in_degrees = prefix_sum_in_degrees
-        self.tot = 0
         self.num_item = self.dataset.shape[0]
 
     def get_end_idx(self):
@@ -106,9 +104,7 @@ class CustomDatasetIter(_TensorizedDatasetIter):
     def _next_indices(self):
         if self.index >= self.num_item:
             raise StopIteration
-        st = time.time()
         end_idx = self.get_end_idx()
-        self.tot += time.time()-st
         batch = self.dataset[self.index:end_idx]
         self.index = end_idx
         return batch
