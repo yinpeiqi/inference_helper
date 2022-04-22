@@ -18,7 +18,7 @@ def _divide_by_worker(dataset):
 
 class CustomDataloader(dgl.dataloading.NodeDataLoader):
     def __init__(self, g, nids, sampler, start_max_node=1000, start_max_edge=10000, prefix_sum_in_degrees=None, \
-        device='cpu', shuffle=False, drop_last=False, use_uva=False, num_workers=0):
+        device='cpu', shuffle=False, use_uva=False, num_workers=0):
 
         custom_dataset = CustomDataset(start_max_node, start_max_edge, g, nids, prefix_sum_in_degrees)
         sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
@@ -28,7 +28,7 @@ class CustomDataloader(dgl.dataloading.NodeDataLoader):
                          device=device,
                          use_uva=use_uva,
                          shuffle=shuffle,
-                         drop_last=drop_last,
+                         drop_last=False,
                          use_prefetch_thread=False,
                          num_workers=num_workers)
 
