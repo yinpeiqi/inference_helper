@@ -14,6 +14,14 @@ from dgl.data import CiteseerGraphDataset, RedditDataset
 from inference_helper import InferenceHelper, EdgeControlInferenceHelper, AutoInferenceHelper
 from dgl.utils import pin_memory_inplace, unpin_memory_inplace, gather_pinned_tensor_rows
 
+def load_friendster():
+    from ...friendster import FriendSterDataset
+    st = time.time()
+    dataset = FriendSterDataset()
+    print(dataset[0])
+    print(time.time()-st)
+    return dataset
+
 def load_reddit():
     from dgl.data import RedditDataset
     data = RedditDataset(self_loop=True)
@@ -27,16 +35,15 @@ def load_ogb(name):
     data = DglNodePropPredDataset(name=name)
     splitted_idx = data.get_idx_split()
     graph, labels = data[0]
+    # graph = dgl.to_bidirected(graph, True)
     graph = dgl.add_self_loop(graph)
     labels = labels[:, 0]
-
-    print(graph)
-    if name == "ogbn-papers100M":
-        print(time.time()-st)
     graph.ndata['features'] = graph.ndata['feat']
     graph.ndata['label'] = labels
     in_feats = graph.ndata['features'].shape[1]
     num_labels = len(torch.unique(labels[torch.logical_not(torch.isnan(labels))]))
+    print(graph)
+    print("loading data:", time.time()-st)
 
     # Find the node IDs in the training, validation, and test set.
     train_nid, val_nid, test_nid = splitted_idx['train'], splitted_idx['valid'], splitted_idx['test']
@@ -54,20 +61,19 @@ def load_ogb(name):
 def train(args):
     if args.dataset == "reddit":
         dataset = load_reddit()
+    elif args.dataset == "friendster":
+        dataset = load_friendster()
     else:
         dataset = load_ogb(args.dataset)
     # dataset = load_reddit()
     g : dgl.DGLHeteroGraph = dataset[0]
     train_mask = g.ndata['train_mask']
-    val_mask = g.ndata['val_mask']
-    test_mask = g.ndata['test_mask']
     feat = g.ndata['feat']
     labels = g.ndata['label']
     num_classes = dataset[1]
     in_feats = feat.shape[1]
     train_nid = torch.nonzero(train_mask, as_tuple=True)[0]
     hidden_feature = args.num_hidden
-
     sampler = dgl.dataloading.MultiLayerNeighborSampler([10, 25, 50])
     dataloader = dgl.dataloading.NodeDataLoader(
         g, train_nid, sampler,
@@ -148,11 +154,7 @@ def train(args):
         elif args.auto:
             print(args.num_layers, args.model, "auto", args.dataset, args.num_heads, args.num_hidden)
             st = time.time()
-            # helper = EdgeControlInferenceHelper(model, 2621440, torch.device('cuda'), debug = False)
-            # helper = InferenceHelper(model, 2000, torch.device('cuda'), debug = False)
             helper = AutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, debug = args.debug)
-            # import pdb
-            # pdb.set_trace()
             helper_pred = helper.inference(g, feat)
             cost_time = time.time() - st
             helper_score = (torch.argmax(helper_pred, dim=1) == labels).float().sum() / len(helper_pred)
