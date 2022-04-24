@@ -1,8 +1,10 @@
 import dgl
+import numpy as np
 import torch
 import torch.nn as nn
 import tqdm
 import gc
+import time
 
 from .auto_tuner import get_auto_tuner
 from .function_generator import FunctionGenerator
@@ -34,7 +36,7 @@ class InferenceHelperBase():
                 raise Exception("output values not match with layer's output.")
             for val, arg_node in zip(output_vals, layer.outputs):
                 if isinstance(val, torch.Tensor):
-                    arg2val_map[arg_node] = val.cpu()
+                    arg2val_map[arg_node] = val
                     ret_shapes[layer.id].append((torch.Tensor, val.size()[1:]))
                 else:
                     ret_shapes[layer.id].append((val.__class__, None))
@@ -50,7 +52,10 @@ class InferenceHelperBase():
         pass
 
     def inference(self, inference_graph, *args):
+        t0 = time.time()
         self.before_inference(inference_graph, *args)
+        t1 = time.time()
+        print("before", t1-t0)
         for k in list(inference_graph.ndata.keys()):
             inference_graph.ndata.pop(k)
         for k in list(inference_graph.edata.keys()):
@@ -172,11 +177,10 @@ class AutoInferenceHelper(InferenceHelperBase):
 
     def before_inference(self, graph, *args):
         self.nids = torch.arange(graph.number_of_nodes()).to(graph.device)
-        in_degrees = graph.in_degrees(self.nids)
+        in_degrees = graph.in_degrees(self.nids).numpy()
+        prefix_sum_in_degrees = np.cumsum(in_degrees)
         self.prefix_sum_in_degrees = [0]
-        self.prefix_sum_in_degrees.extend(in_degrees.tolist())
-        for i in range(1, len(in_degrees)):
-            self.prefix_sum_in_degrees[i] += self.prefix_sum_in_degrees[i - 1]
+        self.prefix_sum_in_degrees.extend(prefix_sum_in_degrees.tolist())
         self.prefix_sum_in_degrees.append(2e18)
 
     def compute(self, graph, rets, layer, func):
@@ -199,14 +203,12 @@ class AutoInferenceHelper(InferenceHelperBase):
             self.prefix_sum_in_degrees,
             device=self._device,
             use_uva=self._use_uva,
-            shuffle=False,
-            drop_last=False)
+            shuffle=False)
 
         # pbar = tqdm.tqdm(total=graph.number_of_nodes())
-        max_memory = 0
-        memorys = []
+        # max_memory = 0
+        # memorys = []
         a, b, c, d, e1 = 0, 0, 0, 0, 0
-        import time
         sss = time.time()
         t0 = time.time()
         tot_input = 0
@@ -229,7 +231,7 @@ class AutoInferenceHelper(InferenceHelperBase):
                 del new_args
                 t3 = time.time()
                 c += t3-t2
-                print(blocks[0], "; max memory = ", torch.cuda.max_memory_allocated() // 1024 ** 2, "MB")
+                # print(blocks[0], "; max memory = ", torch.cuda.max_memory_allocated() // 1024 ** 2, "MB")
 
                 rets = update_ret_output(output_vals, rets, input_nodes, output_nodes, blocks)
                 torch.cuda.synchronize()
@@ -237,8 +239,8 @@ class AutoInferenceHelper(InferenceHelperBase):
                 t4 = time.time()
                 d += t4-t3
                 nxt_max_node, nxt_max_edge = auto_tuner.search(blocks[0])
-                memorys.append(torch.cuda.max_memory_allocated() // 1024 ** 2)
-                max_memory = max(torch.cuda.max_memory_allocated() // 1024 ** 2, max_memory)
+                # memorys.append(torch.cuda.max_memory_allocated() // 1024 ** 2)
+                # max_memory = max(torch.cuda.max_memory_allocated() // 1024 ** 2, max_memory)
                 # pbar.update(output_nodes.shape[0])
 
             except Exception as e:
@@ -263,6 +265,5 @@ class AutoInferenceHelper(InferenceHelperBase):
         print(a, b, c, d, e1)
         print(tot_input)
         print(time.time()-sss)
-        print(dataloader.dataset.curr_iter.tot)
         # print("maximum memory allocated: ", max_memory)
         return rets

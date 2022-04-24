@@ -95,36 +95,41 @@ class GAT(nn.Module):
             # for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
             tot_input = 0
             for input_nodes, output_nodes, blocks in dataloader:
-                print(blocks)
+                torch.cuda.synchronize()
+                # print(blocks)
                 tot_input += input_nodes.shape[0]
-                t1 = time.time()
-                a += t1-t0
-                # torch.cuda.reset_peak_memory_stats()
-                th.cuda.empty_cache()
                 t2 = time.time()
-                e += t2-t1
-
+                a += t2-t0
                 block = blocks[0].to(device)
                 if use_uva:
                     h = gather_pinned_tensor_rows(x, input_nodes)
                 else:
                     h = x[input_nodes].to(device)
+                torch.cuda.synchronize()
                 t3 = time.time()
                 b += t3-t2
 
                 h = layer(block, h)
                 if l == self.num_layers - 1:
                     logits = h.mean(1)
+                    torch.cuda.synchronize()
                     t4 = time.time()
                     c += t4-t3
                     y[output_nodes] = logits.cpu()
                 else:
                     h = h.flatten(1)
+                    torch.cuda.synchronize()
                     t4 = time.time()
                     c += t4-t3
                     y[output_nodes] = h.cpu()
+                torch.cuda.synchronize()
+
+                t5 = time.time()
+                d += t5-t4
+
+                th.cuda.empty_cache()
                 t0 = time.time()
-                d += t0-t4
+                e += t0-t5
                 memorys.append(torch.cuda.max_memory_allocated() // 1024 ** 2)
             if use_uva:
                 unpin_memory_inplace(x)
