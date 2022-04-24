@@ -45,11 +45,23 @@ def update_ret_output(output_vals, rets, input_nodes, output_nodes, blocks):
             if ret is None:
                 raise RuntimeError("Can't determine return's type.")
             if output_val.size()[0] == blocks[0].num_dst_nodes():
-                ret[output_nodes] = output_val.cpu()
+                update_out_in_chunks(ret, output_nodes, output_val)
             elif output_val.size()[0] == blocks[0].num_src_nodes():
-                ret[input_nodes] = output_val.cpu()
+                update_out_in_chunks(ret, input_nodes, output_val)
             else:
                 raise RuntimeError("Can't determine return's type.")
         else:
             ret = output_val
     return rets
+
+def update_out_in_chunks(ret, idx, val):
+    memory_comsuption = 4 # float, TODO
+    for dim in range(1, len(val.shape)):
+        memory_comsuption *= val.shape[dim]
+    num_nodes = val.shape[0]
+    num_node_in_chunks = 33000000 // memory_comsuption
+    start, end = 0, 0
+    while start < num_nodes:
+        end = min(start + num_node_in_chunks, num_nodes)
+        ret[idx[start:end]] = val[start:end].cpu()
+        start = end
