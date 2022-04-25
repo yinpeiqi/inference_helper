@@ -92,13 +92,15 @@ class CustomDatasetIter(_TensorizedDatasetIter):
         # binary search
         binary_start = self.index + 1
         binary_end = min(self.index + self.max_node, self.num_item)
-        binary_middle = (binary_start + binary_end) // 2
+        if self.prefix_sum_in_degrees[binary_end] - self.prefix_sum_in_degrees[self.index] < self.max_edge:
+            return binary_end
+        binary_middle = 0
         while binary_end - binary_start > 5:
+            binary_middle = (binary_start + binary_end) // 2
             if self.prefix_sum_in_degrees[binary_middle] - self.prefix_sum_in_degrees[self.index] < self.max_edge:
                 binary_start = binary_middle
             else:
                 binary_end = binary_middle - 1
-            binary_middle = (binary_start + binary_end) // 2
         return binary_middle
 
     def _next_indices(self):
