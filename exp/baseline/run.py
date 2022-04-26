@@ -10,17 +10,63 @@ from exp_model.gcn import StochasticTwoLayerGCN
 from exp_model.sage import SAGE
 from exp_model.gat import  GAT
 from exp_model.jknet import JKNet
-from dgl.data import CiteseerGraphDataset, RedditDataset
 from inference_helper import InferenceHelper, EdgeControlInferenceHelper, AutoInferenceHelper
 from dgl.utils import pin_memory_inplace, unpin_memory_inplace, gather_pinned_tensor_rows
 
-def load_friendster():
-    from ...friendster import FriendSterDataset
+import os
+from dgl.data.dgl_dataset import DGLDataset
+from dgl.data.utils import load_graphs
+import dgl.backend as backend
+
+class OtherDataset(DGLDataset):
+  raw_dir = '../dataset/'
+
+  def __init__(self, name, force_reload=False,
+               verbose=False, transform=None):
+    self.dataset_name = name
+    if name == 'friendster':
+        self.num_classes = 3
+    elif name == "orkut":
+        self.num_classes = 10
+    elif name == "livejournal1":
+        self.num_classes = 50
+    super(OtherDataset, self).__init__(name=name,
+                                            url=None,
+                                            raw_dir=OtherDataset.raw_dir,
+                                            force_reload=force_reload,
+                                            verbose=verbose)
+
+  def has_cache(self):
+    graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '.bin')
+    if os.path.exists(graph_path):
+      return True
+    return False
+
+  def load(self):
+    print("loading graph")
+    graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '.bin')
+    graphs, _ = load_graphs(graph_path)
+    self._graph = graphs[0]
+
+  def __getitem__(self, idx):
+    assert idx == 0, "This dataset only has one graph"
+    return self._graph
+
+  def __len__(self):
+    return 1
+
+def load_other_dataset(name, dim):
     st = time.time()
-    dataset = FriendSterDataset()
+    dataset = OtherDataset(name)
+    graph = dataset[0]
+    features = np.random.rand(graph.number_of_nodes(), dim)
+    labels = np.random.randint(0, dataset.num_classes, size=graph.number_of_nodes())
+    graph.ndata['train_mask'] = torch.zeros((graph.number_of_nodes(),), dtype=torch.bool)
+    graph.ndata['feat'] = backend.tensor(features, dtype=backend.data_type_dict['float32'])
+    graph.ndata['label'] = backend.tensor(labels, dtype=backend.data_type_dict['int64'])
     print(dataset[0])
     print(time.time()-st)
-    return dataset
+    return graph, dataset.num_classes
 
 def load_reddit():
     from dgl.data import RedditDataset
@@ -61,8 +107,8 @@ def load_ogb(name):
 def train(args):
     if args.dataset == "reddit":
         dataset = load_reddit()
-    elif args.dataset == "friendster":
-        dataset = load_friendster()
+    elif args.dataset in ("friendster", "orkut", "livejournal1"):
+        dataset = load_other_dataset(args.dataset, args.num_hidden)
     else:
         dataset = load_ogb(args.dataset)
     # dataset = load_reddit()
