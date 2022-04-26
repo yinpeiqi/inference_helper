@@ -5,6 +5,8 @@ import dgl
 import dgl.function as fn
 from dgl.nn import GraphConv, JumpingKnowledge
 import tqdm
+from dgl.utils import pin_memory_inplace, unpin_memory_inplace, gather_pinned_tensor_rows
+from inference_helper.profiler import Profiler
 
 class Concate(nn.Module):
     def forward(self, g, jumped):
@@ -60,56 +62,106 @@ class JKNet(nn.Module):
 
         return self.output(agged)
 
-    def inference(self, g, batch_size, device, x):
+    def inference(self, g, batch_size, device, x, use_uva):
+        for k in list(g.ndata.keys()):
+            g.ndata.pop(k)
+        for k in list(g.edata.keys()):
+            g.edata.pop(k)
+
         feat_lst = []
         for l, layer in enumerate(self.layers):
             feat_lst.append(torch.zeros(g.num_nodes(), self.n_hidden))
 
+            nids = torch.arange(g.num_nodes()).to(g.device)
+            if use_uva:
+                pin_memory_inplace(x)
+                nids.to(device)
             sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
             dataloader = dgl.dataloading.NodeDataLoader(
                 g,
-                torch.arange(g.num_nodes()).to(g.device),
+                nids,
                 sampler,
                 batch_size=batch_size,
                 shuffle=False,
+                use_uva=use_uva,
                 drop_last=False,
                 num_workers=0)
 
+            profiler = Profiler()
+            profiler.record_and_reset()
             for input_nodes, output_nodes, blocks in dataloader:
+                profiler.record_name("total input nodes", input_nodes.shape[0])
+                profiler.tag()
                 block = blocks[0]
 
                 block = block.int().to(device)
-                h = x[input_nodes].to(device)
+                if use_uva:
+                    h = gather_pinned_tensor_rows(x, input_nodes)
+                else:
+                    h = x[input_nodes].to(device)
+                profiler.tag()
                 
                 h = layer(block, h)
                 h = self.dropout(h)
+                profiler.tag()
 
                 feat_lst[-1][output_nodes] = h.cpu()
+                profiler.tag()
 
+                torch.cuda.empty_cache()
+                profiler.record_and_reset()
+
+            profiler.show()
+            if use_uva:
+                unpin_memory_inplace(x)
             x = feat_lst[-1]
 
         y = torch.zeros(g.num_nodes(), self.n_classes)
+        nids = torch.arange(g.num_nodes()).to(g.device)
+        if use_uva:
+            for feat in feat_lst:
+                pin_memory_inplace(feat)
+            nids.to(device)
         sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
         dataloader = dgl.dataloading.NodeDataLoader(
             g,
-            torch.arange(g.num_nodes()).to(g.device),
+            nids,
             sampler,
             batch_size=batch_size,
             shuffle=False,
+            use_uva=use_uva,
             drop_last=False,
             num_workers=0)
 
+        profiler = Profiler()
+        profiler.record_and_reset()
         for input_nodes, output_nodes, blocks in dataloader:
+            profiler.record_name("total input nodes", input_nodes.shape[0])
+            profiler.tag()
             block = blocks[0]
 
             block = block.int().to(device)
             h_lst = []
             for feat in feat_lst:
-                h_lst.append(feat[input_nodes].to(device))
-            
+                if use_uva:
+                    h_lst.append(gather_pinned_tensor_rows(feat, input_nodes))
+                else:
+                    h_lst.append(feat[input_nodes].to(device))
+            profiler.tag()
+
             jumped = self.jump(h_lst)
             agged = self.agge(block, jumped)
             output = self.output(agged)
+            profiler.tag()
 
             y[output_nodes] = output.cpu()
+            profiler.tag()
+
+            torch.cuda.empty_cache()
+            profiler.record_and_reset()
+
+        profiler.show()
+        if use_uva:
+            for feat in feat_lst:
+                unpin_memory_inplace(feat)
         return y

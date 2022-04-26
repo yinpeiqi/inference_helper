@@ -6,6 +6,7 @@ import tqdm
 import gc
 import time
 
+from .profiler import Profiler
 from .auto_tuner import get_auto_tuner
 from .function_generator import FunctionGenerator
 from .data_manager import DataManager
@@ -208,36 +209,30 @@ class AutoInferenceHelper(InferenceHelperBase):
         # pbar = tqdm.tqdm(total=graph.number_of_nodes())
         # max_memory = 0
         # memorys = []
-        a, b, c, d, e1 = 0, 0, 0, 0, 0
-        sss = time.time()
-        t0 = time.time()
-        tot_input = 0
+        profiler = Profiler()
+        profiler.record_and_reset()
         for input_nodes, output_nodes, blocks in dataloader:
-            torch.cuda.synchronize()
-            t1 = time.time()
-            a += t1-t0
+            profiler.tag()
             try:
-                tot_input += input_nodes.shape[0]
+                profiler.record_name("total input nodes", input_nodes.shape[0])
                 auto_tuner.set_free()
                 torch.cuda.reset_peak_memory_stats()
                 new_args = get_new_arg_input(layer.inputs, self._data_manager, input_nodes, 
                     blocks[0], self._device, self._use_uva)
-                torch.cuda.synchronize()
-                t2 = time.time()
-                b += t2-t1
+                profiler.tag()
+                # if isinstance(new_args[0], torch.Tensor):
+                #     print(new_args[1], new_args[0].shape, (t2-t1)*1000*1000 / new_args[0].shape[0]*new_args[0].shape[1])
+                # else:
+                #     print(new_args[0], new_args[1].shape, (t2-t1)*1000*1000 / new_args[1].shape[0]*new_args[1].shape[1])
 
                 output_vals = func(*new_args)
-                torch.cuda.synchronize()
                 del new_args
-                t3 = time.time()
-                c += t3-t2
-                # print(blocks[0], "; max memory = ", torch.cuda.max_memory_allocated() // 1024 ** 2, "MB")
+                profiler.tag()
+                print(blocks[0], "; max memory = ", torch.cuda.max_memory_allocated() // 1024 ** 2, "MB")
 
                 rets = update_ret_output(output_vals, rets, input_nodes, output_nodes, blocks)
-                torch.cuda.synchronize()
                 del output_vals
-                t4 = time.time()
-                d += t4-t3
+                profiler.tag()
                 nxt_max_node, nxt_max_edge = auto_tuner.search(blocks[0])
                 # memorys.append(torch.cuda.max_memory_allocated() // 1024 ** 2)
                 # max_memory = max(torch.cuda.max_memory_allocated() // 1024 ** 2, max_memory)
@@ -245,7 +240,7 @@ class AutoInferenceHelper(InferenceHelperBase):
 
             except Exception as e:
                 print(e)
-                t4 = time.time()
+                profiler.tag()
                 nxt_max_node, nxt_max_edge = auto_tuner.break_peak(blocks[0])
                 dataloader.reset_batch_node(output_nodes.shape[0])
                 gc.collect()
@@ -254,16 +249,13 @@ class AutoInferenceHelper(InferenceHelperBase):
                 dataloader.modify_max_node(nxt_max_node)
                 dataloader.modify_max_edge(nxt_max_edge)
                 torch.cuda.empty_cache()
-                t0 = time.time()
-                e1 += t0-t4
+                profiler.record_and_reset()
 
         if self._use_uva:
             self._data_manager.unpin_data_inplace(layer)
 
         # pbar.close()
         # print(memorys)
-        print(a, b, c, d, e1)
-        print(tot_input)
-        print(time.time()-sss)
+        profiler.show()
         # print("maximum memory allocated: ", max_memory)
         return rets

@@ -1,3 +1,4 @@
+import profile
 import torch.fx
 import torch as th
 import torch.nn as nn
@@ -5,6 +6,7 @@ import gc
 
 import dgl
 from dgl.nn import GATConv
+from inference_helper.profiler import Profiler
 import tqdm
 from dgl.utils import pin_memory_inplace, unpin_memory_inplace, gather_pinned_tensor_rows
 
@@ -88,55 +90,40 @@ class GAT(nn.Module):
                 device=device,
                 num_workers=0)
             memorys = []
-            a, b, c, d, e = 0, 0, 0, 0, 0
-            import time
-            sss = time.time()
-            t0 = time.time()
+            
+            profiler = Profiler()
+            profiler.record_and_reset()
             # for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
-            tot_input = 0
             for input_nodes, output_nodes, blocks in dataloader:
-                torch.cuda.synchronize()
+                profiler.tag()
+                profiler.record_name("total input nodes", input_nodes.shape[0])
                 # print(blocks)
-                tot_input += input_nodes.shape[0]
-                t2 = time.time()
-                a += t2-t0
                 block = blocks[0].to(device)
                 if use_uva:
                     h = gather_pinned_tensor_rows(x, input_nodes)
                 else:
                     h = x[input_nodes].to(device)
-                torch.cuda.synchronize()
-                t3 = time.time()
-                b += t3-t2
+                profiler.tag()
+                # print( (t3-t2)*1000*1000 / h.shape[0]*h.shape[1])
 
                 h = layer(block, h)
                 if l == self.num_layers - 1:
                     logits = h.mean(1)
-                    torch.cuda.synchronize()
-                    t4 = time.time()
-                    c += t4-t3
+                    profiler.tag()
                     y[output_nodes] = logits.cpu()
                 else:
                     h = h.flatten(1)
-                    torch.cuda.synchronize()
-                    t4 = time.time()
-                    c += t4-t3
+                    profiler.tag()
                     y[output_nodes] = h.cpu()
-                torch.cuda.synchronize()
-
-                t5 = time.time()
-                d += t5-t4
+                profiler.tag()
 
                 th.cuda.empty_cache()
-                t0 = time.time()
-                e += t0-t5
+                profiler.record_and_reset()
                 memorys.append(torch.cuda.max_memory_allocated() // 1024 ** 2)
             if use_uva:
                 unpin_memory_inplace(x)
             x = y
             # print(memorys)
-            print(a, b, c, d, e)
-            print("tot:", tot_input)
-            print(time.time()- sss)
+            profiler.show()
         # print("memory: ", torch.cuda.max_memory_allocated() // 1024 ** 2)
         return y
