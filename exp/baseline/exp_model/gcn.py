@@ -90,6 +90,7 @@ class StochasticTwoLayerGCN(nn.Module):
             if use_uva:
                 unpin_memory_inplace(x)
             x = y
+            profiler.show()
 
         return y
 
