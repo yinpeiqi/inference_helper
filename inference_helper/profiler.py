@@ -26,6 +26,9 @@ class Profiler:
         else:
             self.m[name] += val
 
+    def last(self):
+        return self.curr[-1] - self.curr[-2]
+
     def show(self):
         for t in self.time:
             print(t, end=" ")

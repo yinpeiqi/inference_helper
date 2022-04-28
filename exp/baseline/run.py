@@ -167,13 +167,16 @@ def train(args):
             sampler = dgl.dataloading.MultiLayerFullNeighborSampler(args.num_layers)
             dataloader = dgl.dataloading.NodeDataLoader(
                 g, nids, sampler, batch_size=args.batch_size, 
-                shuffle=False, drop_last=False, use_uva=False, device=device, num_workers=0)
+                shuffle=True, drop_last=False, use_uva=False, device=device, num_workers=0)
             pred = torch.zeros(g.number_of_nodes(), model.out_features)
             pin_memory_inplace(feat)
+            t = time.time()
             for input_nodes, output_nodes, blocks in dataloader:
                 print(blocks)
                 input_features = gather_pinned_tensor_rows(feat, input_nodes)
                 pred[output_nodes] = model(blocks, input_features).cpu()
+                print(time.time()-t)
+                t = time.time()
             unpin_memory_inplace(feat)
             cost_time = time.time() - st
             func_score = (torch.argmax(pred, dim=1) == labels.to(device)).float().sum() / len(pred)
@@ -185,7 +188,7 @@ def train(args):
             pred = model.forward_full(g.to(device), feat.to(device))
             cost_time = time.time() - st
             func_score = (torch.argmax(pred, dim=1) == labels.to(device)).float().sum() / len(pred)
-            print("CPU Inference: {}, inference time: {}".format(func_score, cost_time))
+            print("GPU Inference: {}, inference time: {}".format(func_score, cost_time))
 
         elif args.cpufull:
             print(args.num_layers, args.model, "CPU FULL", args.dataset, args.num_heads, args.num_hidden)

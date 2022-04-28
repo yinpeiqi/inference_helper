@@ -3,6 +3,7 @@ import dgl
 import torch.nn as nn
 import torch.nn.functional as F
 import tqdm
+from inference_helper.profiler import Profiler
 from dgl.utils import pin_memory_inplace, unpin_memory_inplace, gather_pinned_tensor_rows
 
 
@@ -56,25 +57,35 @@ class StochasticTwoLayerGCN(nn.Module):
                 g, nids, sampler,
                 batch_size=batch_size,
                 shuffle=False,
+                use_uva=use_uva,
                 drop_last=False,
                 device=torch.device('cuda'),
                 num_workers=0)
 
+            profiler = Profiler()
+            profiler.record_and_reset()
             # Within a layer, iterate over nodes in batches
             for input_nodes, output_nodes, blocks in dataloader:
+                profiler.tag()
                 block = blocks[0].to(device)
 
                 # Copy the features of necessary input nodes to GPU
-                if self.use_uva:
+                if use_uva:
                     h = gather_pinned_tensor_rows(x, input_nodes)
                 else:
                     h = x[input_nodes].to(device)
+                profiler.tag()
                 # Compute output.  Note that this computation is the same
                 # but only for a single layer.
                 h_dst = h[:block.number_of_dst_nodes()]
                 h = F.relu(layer(block, (h, h_dst)))
+                profiler.tag()
                 # Copy to output back to CPU.
                 y[output_nodes] = h.cpu()
+                profiler.tag()
+
+                torch.cuda.empty_cache()
+                profiler.record_and_reset()
 
             if use_uva:
                 unpin_memory_inplace(x)
