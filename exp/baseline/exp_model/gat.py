@@ -1,4 +1,3 @@
-import profile
 import torch.fx
 import torch as th
 import torch.nn as nn
@@ -9,7 +8,7 @@ from dgl.nn import GATConv
 from inference_helper.profiler import Profiler
 import tqdm
 from dgl.utils import pin_memory_inplace, unpin_memory_inplace, gather_pinned_tensor_rows
-
+from inference_helper.utils import update_out_in_chunks
 
 class GAT(nn.Module):
     def __init__(self,
@@ -104,7 +103,7 @@ class GAT(nn.Module):
                 else:
                     h = x[input_nodes].to(device)
                 profiler.tag()
-                # print( (t3-t2)*1000*1000 / h.shape[0]*h.shape[1])
+                # print(h.shape, "%.2f"%(profiler.last()), "s;", "%.2f"%(h.shape[0]*h.shape[1]*4/1000**3), "GB;", "%.2f"%(h.shape[0]*h.shape[1]*4 / profiler.last() / 1000**3), "GB/s")
 
                 h = layer(block, h)
                 if l == self.num_layers - 1:
@@ -114,7 +113,7 @@ class GAT(nn.Module):
                 else:
                     h = h.flatten(1)
                     profiler.tag()
-                    y[output_nodes] = h.cpu()
+                    update_out_in_chunks(y, output_nodes, h)
                 profiler.tag()
 
                 th.cuda.empty_cache()

@@ -7,6 +7,7 @@ from dgl.nn import GraphConv, JumpingKnowledge
 import tqdm
 from dgl.utils import pin_memory_inplace, unpin_memory_inplace, gather_pinned_tensor_rows
 from inference_helper.profiler import Profiler
+from inference_helper.utils import update_out_in_chunks
 
 class Concate(nn.Module):
     def forward(self, g, jumped):
@@ -105,7 +106,7 @@ class JKNet(nn.Module):
                 h = self.dropout(h)
                 profiler.tag()
 
-                feat_lst[-1][output_nodes] = h.cpu()
+                update_out_in_chunks(feat_lst[-1], output_nodes, h)
                 profiler.tag()
 
                 torch.cuda.empty_cache()
@@ -153,8 +154,8 @@ class JKNet(nn.Module):
             agged = self.agge(block, jumped)
             output = self.output(agged)
             profiler.tag()
-
-            y[output_nodes] = output.cpu()
+            
+            update_out_in_chunks(y, output_nodes, output)
             profiler.tag()
 
             torch.cuda.empty_cache()
