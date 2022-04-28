@@ -221,6 +221,7 @@ def train(args):
             if args.gpu != -1:
                 print("max memory:", torch.cuda.max_memory_allocated() // 1024 ** 2)
             print("Origin Inference: {}, inference time: {}".format(func_score, cost_time))
+        print("\n")
 
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser()

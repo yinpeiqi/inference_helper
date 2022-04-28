@@ -228,7 +228,7 @@ class AutoInferenceHelper(InferenceHelperBase):
                 output_vals = func(*new_args)
                 del new_args
                 profiler.tag()
-                print(blocks[0], "; max memory = ", torch.cuda.max_memory_allocated() // 1024 ** 2, "MB")
+                # print(blocks[0], "; max memory = ", torch.cuda.max_memory_allocated() // 1024 ** 2, "MB")
 
                 rets = update_ret_output(output_vals, rets, input_nodes, output_nodes, blocks)
                 del output_vals

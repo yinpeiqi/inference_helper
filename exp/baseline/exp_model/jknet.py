@@ -31,7 +31,7 @@ class JKNet(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.layers = nn.ModuleList()
         self.layers.append(GraphConv(in_dim, hid_dim, activation=F.relu))
-        for _ in range(num_layers):
+        for _ in range(num_layers - 1):
             self.layers.append(GraphConv(hid_dim, hid_dim, activation=F.relu))
 
         if self.mode == 'lstm':
