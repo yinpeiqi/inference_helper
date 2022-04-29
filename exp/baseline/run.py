@@ -20,29 +20,31 @@ import dgl.backend as backend
 
 
 class OtherDataset(DGLDataset):
-  raw_dir = '../dataset/'
+    raw_dir = '../dataset/'
 
-  def __init__(self, name, force_reload=False,
-               verbose=False, transform=None):
-    self.dataset_name = name
-    if name == 'friendster':
-        self.num_classes = 3
-    elif name == "orkut":
-        self.num_classes = 10
-    elif name == "livejournal1":
-        self.num_classes = 50
-    super(OtherDataset, self).__init__(name=name,
-                                            url=None,
-                                            raw_dir=OtherDataset.raw_dir,
-                                            force_reload=force_reload,
-                                            verbose=verbose)
+    def __init__(self, name, force_reload=False,
+                verbose=False, transform=None):
+        self.dataset_name = name
+        if name == 'friendster':
+            self.num_classes = 3
+        elif name == "orkut":
+            self.num_classes = 10
+        elif name == "livejournal1":
+            self.num_classes = 50
+        else:
+            self.num_classes = 100
+        super(OtherDataset, self).__init__(name=name,
+                                                url=None,
+                                                raw_dir=OtherDataset.raw_dir,
+                                                force_reload=force_reload,
+                                                verbose=verbose)
 
     def process(self):
         row = []
         col = []
         cur_node = 0
         node_mp = {}
-        with open(OtherDataset.raw_dir + "com-friendster.ungraph.txt'", 'r') as f:
+        with open(OtherDataset.raw_dir + "com-friendster.ungraph.txt", 'r') as f:
             for line in f:
                 arr = line.split()
                 if arr[0] == '#':
@@ -63,28 +65,28 @@ class OtherDataset(DGLDataset):
         graph = dgl.to_simple(graph)
         self._graph = graph
 
-  def has_cache(self):
-    graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '.bin')
-    if os.path.exists(graph_path):
-      return True
-    return False
+    def has_cache(self):
+        graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '.bin')
+        if os.path.exists(graph_path):
+            return True
+        return False
 
-  def save(self):
-    graph_path = os.path.join(self.save_path, 'dgl_graph.bin')
-    save_graphs(graph_path, self._graph)
+    def save(self):
+        graph_path = os.path.join(self.save_path, 'dgl_graph.bin')
+        save_graphs(graph_path, self._graph)
 
-  def load(self):
-    print("loading graph")
-    graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '.bin')
-    graphs, _ = load_graphs(graph_path)
-    self._graph = graphs[0]
+    def load(self):
+        print("loading graph")
+        graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '.bin')
+        graphs, _ = load_graphs(graph_path)
+        self._graph = graphs[0]
 
-  def __getitem__(self, idx):
-    assert idx == 0, "This dataset only has one graph"
-    return self._graph
+    def __getitem__(self, idx):
+        assert idx == 0, "This dataset only has one graph"
+        return self._graph
 
-  def __len__(self):
-    return 1
+    def __len__(self):
+        return 1
 
 def load_other_dataset(name, dim):
     st = time.time()
