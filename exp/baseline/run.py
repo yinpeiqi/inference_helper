@@ -72,7 +72,7 @@ class OtherDataset(DGLDataset):
         return False
 
     def save(self):
-        graph_path = os.path.join(self.save_path, 'dgl_graph.bin')
+        graph_path = os.path.join(self.save_path, self.dataset_name + '.bin')
         save_graphs(graph_path, self._graph)
 
     def load(self):
@@ -144,7 +144,6 @@ def train(args):
         dataset = load_other_dataset(args.dataset, args.num_hidden)
     else:
         dataset = load_ogb(args.dataset)
-    # dataset = load_reddit()
     g : dgl.DGLHeteroGraph = dataset[0]
     train_mask = g.ndata['train_mask']
     feat = g.ndata['feat']
@@ -190,6 +189,7 @@ def train(args):
             opt.zero_grad()
             loss.backward()
             opt.step()
+            # We do not need to train the network, just to make sure it can run.
             break
 
     with torch.no_grad():
