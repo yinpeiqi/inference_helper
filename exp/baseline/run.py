@@ -15,8 +15,9 @@ from dgl.utils import pin_memory_inplace, unpin_memory_inplace, gather_pinned_te
 
 import os
 from dgl.data.dgl_dataset import DGLDataset
-from dgl.data.utils import load_graphs
+from dgl.data.utils import load_graphs, save_graphs
 import dgl.backend as backend
+
 
 class OtherDataset(DGLDataset):
   raw_dir = '../dataset/'
@@ -67,6 +68,10 @@ class OtherDataset(DGLDataset):
     if os.path.exists(graph_path):
       return True
     return False
+
+  def save(self):
+    graph_path = os.path.join(self.save_path, 'dgl_graph.bin')
+    save_graphs(graph_path, self._graph)
 
   def load(self):
     print("loading graph")
