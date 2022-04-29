@@ -23,6 +23,7 @@ class InferenceHelperBase():
         self._schema = self._function_generator.get_schema()
         self._funcs = self._function_generator.get_funcs()
         self._data_manager = DataManager(device, use_uva)
+        self._debug = debug
 
     def _trace_output_shape(self, arg2val_map):
         ret_shapes = [[] for _ in range(self._schema.layers_count)]
@@ -228,7 +229,8 @@ class AutoInferenceHelper(InferenceHelperBase):
                 output_vals = func(*new_args)
                 del new_args
                 profiler.tag()
-                # print(blocks[0], "; max memory = ", torch.cuda.max_memory_allocated() // 1024 ** 2, "MB")
+                if self._debug:
+                    print(blocks[0], "; max memory = ", torch.cuda.max_memory_allocated() // 1024 ** 2, "MB")
 
                 rets = update_ret_output(output_vals, rets, input_nodes, output_nodes, blocks)
                 del output_vals
