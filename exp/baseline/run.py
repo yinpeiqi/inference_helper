@@ -15,6 +15,7 @@ from dgl.utils import pin_memory_inplace, unpin_memory_inplace, gather_pinned_te
 
 import os
 from dgl.data.dgl_dataset import DGLDataset
+from ogb.nodeproppred import DglNodePropPredDataset
 from dgl.data.utils import load_graphs, save_graphs
 import dgl.backend as backend
 
@@ -22,9 +23,10 @@ import dgl.backend as backend
 class OtherDataset(DGLDataset):
     raw_dir = '../dataset/'
 
-    def __init__(self, name, force_reload=False,
+    def __init__(self, name, force_reload=False, use_reorder=False,
                 verbose=False, transform=None):
         self.dataset_name = name
+        self.use_reorder = use_reorder
         if name == 'friendster':
             self.num_classes = 3
         elif name == "orkut":
@@ -72,14 +74,28 @@ class OtherDataset(DGLDataset):
         return False
 
     def save(self):
-        graph_path = os.path.join(self.save_path, self.dataset_name + '.bin')
+        graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '.bin')
         save_graphs(graph_path, self._graph)
 
     def load(self):
-        print("loading graph")
-        graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '.bin')
-        graphs, _ = load_graphs(graph_path)
-        self._graph = graphs[0]
+        if self.use_reorder:
+            reorder_graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-reorder.bin')
+            if os.path.exists(reorder_graph_path):
+                graphs, _ = load_graphs(reorder_graph_path)
+                self._graph = graphs[0]
+            else:
+                graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '.bin')
+                graphs, _ = load_graphs(graph_path)
+                t1 = time.time()
+                print("Reordering the graph...")
+                self._graph = dgl.reorder_graph(graphs[0], node_permute_algo='rcmk', edge_permute_algo='src')
+                print("Reorder is done, cost ", time.time()-t1)
+                reorder_graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-reorder.bin')
+                save_graphs(reorder_graph_path, self._graph)
+        else:
+            graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '.bin')
+            graphs, _ = load_graphs(graph_path)
+            self._graph = graphs[0]
 
     def __getitem__(self, idx):
         assert idx == 0, "This dataset only has one graph"
@@ -88,9 +104,9 @@ class OtherDataset(DGLDataset):
     def __len__(self):
         return 1
 
-def load_other_dataset(name, dim):
+def load_other_dataset(name, dim, reorder):
     st = time.time()
-    dataset = OtherDataset(name)
+    dataset = OtherDataset(name, use_reorder=reorder)
     graph = dataset[0]
     features = np.random.rand(graph.number_of_nodes(), dim)
     labels = np.random.randint(0, dataset.num_classes, size=graph.number_of_nodes())
@@ -108,10 +124,45 @@ def load_reddit():
     g.ndata['features'] = g.ndata['feat']
     return g, data.num_classes
 
-def load_ogb(name):
+class OgbnDataset(DglNodePropPredDataset):
+    def __init__(self, name, root = 'dataset', use_reorder = False, meta_dict = None):
+        self.use_reorder = use_reorder
+        super().__init__(name, root, meta_dict)
+
+    def pre_process(self):
+        if self.use_reorder:
+            processed_dir = os.path.join(self.root, 'processed')
+            pre_processed_file_path = os.path.join(processed_dir, 'dgl_data_processed_reorder')
+
+            if os.path.exists(pre_processed_file_path):
+                self.graph, label_dict = load_graphs(pre_processed_file_path)
+                if self.is_hetero:
+                    self.labels = label_dict
+                else:
+                    self.labels = label_dict['labels']
+            else:
+                super().pre_process()
+                t1 = time.time()
+                print("Reordering the graph...")
+                if isinstance(self.graph, list):
+                    self.graph = self.graph[0]
+                self.graph = dgl.reorder_graph(self.graph, node_permute_algo='rcmk', edge_permute_algo='src')
+                print("Reorder is done, cost ", time.time()-t1)
+                if self.is_hetero:
+                    label_dict = self.labels
+                else:
+                    label_dict = {'labels': self.labels}
+
+                print('Saving...')
+                save_graphs(pre_processed_file_path, self.graph, label_dict)
+                self.graph, _ = load_graphs(pre_processed_file_path)
+        else:
+            super().pre_process()
+
+
+def load_ogb(name, reorder):
     st = time.time()
-    from ogb.nodeproppred import DglNodePropPredDataset
-    data = DglNodePropPredDataset(name=name)
+    data = OgbnDataset(name=name, use_reorder=reorder)
     splitted_idx = data.get_idx_split()
     graph, labels = data[0]
     # graph = dgl.to_bidirected(graph, True)
@@ -141,9 +192,9 @@ def train(args):
     if args.dataset == "reddit":
         dataset = load_reddit()
     elif args.dataset in ("friendster", "orkut", "livejournal1"):
-        dataset = load_other_dataset(args.dataset, args.num_hidden)
+        dataset = load_other_dataset(args.dataset, args.num_hidden, args.reorder)
     else:
-        dataset = load_ogb(args.dataset)
+        dataset = load_ogb(args.dataset, args.reorder)
     g : dgl.DGLHeteroGraph = dataset[0]
     train_mask = g.ndata['train_mask']
     feat = g.ndata['feat']
@@ -258,14 +309,17 @@ def train(args):
 
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
-    argparser.add_argument('--use-uva', action="store_true")
+    argparser.add_argument('--reorder', help="use the reordered graph", action="store_true")
+    argparser.add_argument('--use-uva', help="use the pinned memory", action="store_true")
+
+    # Different inference mode. 
     argparser.add_argument('--topdown', action="store_true")
     argparser.add_argument('--cpufull', action="store_true")
     argparser.add_argument('--gpufull', action="store_true")
-    argparser.add_argument('--gpu', type=int, default=0,
-                           help="GPU device ID. Use -1 for CPU training")
-    argparser.add_argument('--model', type=str, default='GCN')
+    argparser.add_argument('--gpu', help="GPU device ID. Use -1 for CPU training", type=int, default=0)
     argparser.add_argument('--auto', action="store_true")
+
+    argparser.add_argument('--model', help="can be GCN, GAT, SAGE and JKNET", type=str, default='GCN')
     argparser.add_argument('--debug', action="store_true")
     argparser.add_argument('--num-epochs', type=int, default=0)
     argparser.add_argument('--dataset', type=str, default='ogbn-products')

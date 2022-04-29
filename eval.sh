@@ -16,6 +16,9 @@ for i in {0..2}
         # auto solotion
         python -u exp/baseline/run.py --model $model --num-layers $layer --num-hidden $hidden --num-heads 2 --use-uva --dataset $dataset --auto
 
+        # auto solotion with reorder
+        python -u exp/baseline/run.py --model $model --num-layers $layer --num-hidden $hidden --num-heads 2 --use-uva --dataset $dataset --auto --reorder
+
         # best batch baseline
         python -u exp/baseline/run.py --model $model --num-layers $layer --num-hidden $hidden --num-heads 2 --use-uva --dataset $dataset --batch-size $batch_size
 
