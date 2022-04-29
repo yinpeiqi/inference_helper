@@ -69,7 +69,9 @@ class OtherDataset(DGLDataset):
 
     def has_cache(self):
         graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '.bin')
+        print(graph_path)
         if os.path.exists(graph_path):
+            print("load from cache")
             return True
         return False
 
@@ -91,7 +93,9 @@ class OtherDataset(DGLDataset):
                 self._graph = dgl.reorder_graph(graphs[0], node_permute_algo='rcmk', edge_permute_algo='src')
                 print("Reorder is done, cost ", time.time()-t1)
                 reorder_graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-reorder.bin')
-                save_graphs(reorder_graph_path, self._graph)
+                import pdb
+                pdb.set_trace()
+                save_graphs(reorder_graph_path, [self._graph])
         else:
             graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '.bin')
             graphs, _ = load_graphs(graph_path)
@@ -136,6 +140,8 @@ class OgbnDataset(DglNodePropPredDataset):
 
             if os.path.exists(pre_processed_file_path):
                 self.graph, label_dict = load_graphs(pre_processed_file_path)
+                features = np.random.rand(self.graph[0].number_of_nodes(), 100)
+                self.graph[0].ndata['feat'] = backend.tensor(features, dtype=backend.data_type_dict['float32'])
                 if self.is_hetero:
                     self.labels = label_dict
                 else:
@@ -154,8 +160,11 @@ class OgbnDataset(DglNodePropPredDataset):
                     label_dict = {'labels': self.labels}
 
                 print('Saving...')
+                self.graph.ndata.pop("feat")
                 save_graphs(pre_processed_file_path, self.graph, label_dict)
                 self.graph, _ = load_graphs(pre_processed_file_path)
+                features = np.random.rand(self.graph.number_of_nodes(), 100)
+                self.graph.ndata['feat'] = backend.tensor(features, dtype=backend.data_type_dict['float32'])
         else:
             super().pre_process()
 
