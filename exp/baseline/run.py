@@ -89,12 +89,12 @@ class OtherDataset(DGLDataset):
                 graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '.bin')
                 graphs, _ = load_graphs(graph_path)
                 t1 = time.time()
+
                 print("Reordering the graph...")
                 self._graph = dgl.reorder_graph(graphs[0], node_permute_algo='rcmk', edge_permute_algo='src')
                 print("Reorder is done, cost ", time.time()-t1)
                 reorder_graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-reorder.bin')
-                import pdb
-                pdb.set_trace()
+
                 save_graphs(reorder_graph_path, [self._graph])
         else:
             graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '.bin')
