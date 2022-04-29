@@ -63,7 +63,6 @@ class OtherDataset(DGLDataset):
         row = np.array(row)
         col = np.array(col)
         graph = dgl.graph((row, col))
-        graph = dgl.to_bidirected(graph)
         graph = dgl.to_simple(graph)
         self._graph = graph
 
@@ -76,28 +75,37 @@ class OtherDataset(DGLDataset):
         return False
 
     def save(self):
+        # save normal graph
         graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '.bin')
         save_graphs(graph_path, self._graph)
+
+        # save bidirected graph
+        self._graph = dgl.to_bidirected(self._graph)
+        bigraph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-bi.bin')
+        save_graphs(bigraph_path, self._graph)
+
+        if self.use_reorder:
+            # save reorder graph
+            self._graph = None
+            graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '.bin')
+            graphs, _ = load_graphs(graph_path)
+            t1 = time.time()
+
+            print("Reordering the graph...")
+            self._graph = dgl.reorder_graph(graphs[0], node_permute_algo='rcmk', edge_permute_algo='src')
+            print("Reorder is done, cost ", time.time()-t1)
+            self._graph = dgl.to_bidirected(self._graph)
+            reorder_graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-reorder.bin')
+
+            save_graphs(reorder_graph_path, [self._graph])
 
     def load(self):
         if self.use_reorder:
             reorder_graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-reorder.bin')
-            if os.path.exists(reorder_graph_path):
-                graphs, _ = load_graphs(reorder_graph_path)
-                self._graph = graphs[0]
-            else:
-                graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '.bin')
-                graphs, _ = load_graphs(graph_path)
-                t1 = time.time()
-
-                print("Reordering the graph...")
-                self._graph = dgl.reorder_graph(graphs[0], node_permute_algo='rcmk', edge_permute_algo='src')
-                print("Reorder is done, cost ", time.time()-t1)
-                reorder_graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-reorder.bin')
-
-                save_graphs(reorder_graph_path, [self._graph])
+            graphs, _ = load_graphs(reorder_graph_path)
+            self._graph = graphs[0]
         else:
-            graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '.bin')
+            graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-bi.bin')
             graphs, _ = load_graphs(graph_path)
             self._graph = graphs[0]
 
