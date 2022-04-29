@@ -36,6 +36,32 @@ class OtherDataset(DGLDataset):
                                             force_reload=force_reload,
                                             verbose=verbose)
 
+    def process(self):
+        row = []
+        col = []
+        cur_node = 0
+        node_mp = {}
+        with open(OtherDataset.raw_dir + "com-friendster.ungraph.txt'", 'r') as f:
+            for line in f:
+                arr = line.split()
+                if arr[0] == '#':
+                    continue
+                src, dst = int(arr[0]), int(arr[1])
+                if src not in node_mp:
+                    node_mp[src] = cur_node
+                    cur_node += 1
+                if dst not in node_mp:
+                    node_mp[dst] = cur_node
+                    cur_node += 1
+                row.append(node_mp[src])
+                col.append(node_mp[dst])
+        row = np.array(row)
+        col = np.array(col)
+        graph = dgl.graph((row, col))
+        graph = dgl.to_bidirected(graph)
+        graph = dgl.to_simple(graph)
+        self._graph = graph
+
   def has_cache(self):
     graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '.bin')
     if os.path.exists(graph_path):

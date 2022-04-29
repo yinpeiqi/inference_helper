@@ -40,7 +40,7 @@ class JKNet(nn.Module):
             self.jump = JumpingKnowledge(mode)
 
         if self.mode == 'cat':
-            hid_dim = hid_dim * (num_layers + 1)
+            hid_dim = hid_dim * (num_layers)
 
         self.output = nn.Linear(hid_dim, out_dim)
         self.agge = Concate()
