@@ -42,72 +42,58 @@ class OtherDataset(DGLDataset):
                                                 verbose=verbose)
 
     def process(self):
-        row = []
-        col = []
-        cur_node = 0
-        node_mp = {}
-        with open(OtherDataset.raw_dir + "com-friendster.ungraph.txt", 'r') as f:
-            for line in f:
-                arr = line.split()
-                if arr[0] == '#':
-                    continue
-                src, dst = int(arr[0]), int(arr[1])
-                if src not in node_mp:
-                    node_mp[src] = cur_node
-                    cur_node += 1
-                if dst not in node_mp:
-                    node_mp[dst] = cur_node
-                    cur_node += 1
-                row.append(node_mp[src])
-                col.append(node_mp[dst])
-        row = np.array(row)
-        col = np.array(col)
-        graph = dgl.graph((row, col))
-        graph = dgl.to_simple(graph)
-        self._graph = graph
-
-    def has_cache(self):
         graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '.bin')
-        print(graph_path)
-        if os.path.exists(graph_path):
-            print("load from cache")
-            return True
-        return False
-
-    def save(self):
-        # save normal graph
-        graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '.bin')
-        save_graphs(graph_path, self._graph)
-
-        # save bidirected graph
-        self._graph = dgl.to_bidirected(self._graph)
-        bigraph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-bi.bin')
-        save_graphs(bigraph_path, self._graph)
+        if not os.path.exists(graph_path):
+            row = []
+            col = []
+            cur_node = 0
+            node_mp = {}
+            with open(OtherDataset.raw_dir + "com-friendster.ungraph.txt", 'r') as f:
+                for line in f:
+                    arr = line.split()
+                    if arr[0] == '#':
+                        continue
+                    src, dst = int(arr[0]), int(arr[1])
+                    if src not in node_mp:
+                        node_mp[src] = cur_node
+                        cur_node += 1
+                    if dst not in node_mp:
+                        node_mp[dst] = cur_node
+                        cur_node += 1
+                    row.append(node_mp[src])
+                    col.append(node_mp[dst])
+            row = np.array(row)
+            col = np.array(col)
+            graph = dgl.graph((row, col))
+            graph = dgl.to_simple(graph)
+            save_graphs(graph_path, self._graph)
 
         if self.use_reorder:
-            # save reorder graph
-            self._graph = None
-            graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '.bin')
-            graphs, _ = load_graphs(graph_path)
-            t1 = time.time()
-
-            print("Reordering the graph...")
-            self._graph = dgl.reorder_graph(graphs[0], node_permute_algo='rcmk', edge_permute_algo='src')
-            print("Reorder is done, cost ", time.time()-t1)
-            self._graph = dgl.to_bidirected(self._graph)
             reorder_graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-reorder.bin')
-
-            save_graphs(reorder_graph_path, [self._graph])
-
-    def load(self):
-        if self.use_reorder:
-            reorder_graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-reorder.bin')
-            graphs, _ = load_graphs(reorder_graph_path)
-            self._graph = graphs[0]
+            if not os.path.exists(reorder_graph_path):
+                graphs, _ = load_graphs(graph_path)
+                t1 = time.time()
+                print("Reordering the graph...")
+                self._graph = dgl.reorder_graph(graphs[0], node_permute_algo='rcmk', edge_permute_algo='src')
+                print("Reorder is done, cost ", time.time()-t1)
+                save_graphs(reorder_graph_path, [self._graph])
+            
+            reorder_bigraph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-bi-reorder.bin')
+            if not os.path.exists(reorder_bigraph_path):
+                graphs, _ = load_graphs(reorder_graph_path)
+                print(graphs)
+                self._graph = dgl.to_bidirected(graphs[0])
+                save_graphs(reorder_bigraph_path, [self._graph])
+            else:
+                self._graph, _ = load_graphs(reorder_bigraph_path)
         else:
-            graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-bi.bin')
-            graphs, _ = load_graphs(graph_path)
-            self._graph = graphs[0]
+            bigraph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-bi.bin')
+            if not os.path.exists(bigraph_path):
+                graphs, _ = load_graphs(bigraph_path)
+                self._graph = dgl.to_bidirected(graphs[0])
+                save_graphs(bigraph_path, [self._graph])
+            else:
+                self._graph, _ = load_graphs(bigraph_path)            
 
     def __getitem__(self, idx):
         assert idx == 0, "This dataset only has one graph"
