@@ -91,6 +91,7 @@ class JKNet(nn.Module):
             profiler = Profiler()
             profiler.record_and_reset()
             for input_nodes, output_nodes, blocks in dataloader:
+                torch.cuda.empty_cache()
                 profiler.record_name("total input nodes", input_nodes.shape[0])
                 profiler.tag()
                 block = blocks[0]
@@ -137,6 +138,7 @@ class JKNet(nn.Module):
         profiler = Profiler()
         profiler.record_and_reset()
         for input_nodes, output_nodes, blocks in dataloader:
+            torch.cuda.empty_cache()
             profiler.record_name("total input nodes", input_nodes.shape[0])
             profiler.tag()
             block = blocks[0]
