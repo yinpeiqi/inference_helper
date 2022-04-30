@@ -36,7 +36,12 @@ class AutoTunerBase:
 class GPUAutoTuner(AutoTunerBase):
     def __init__(self, cached=0):
         self.cached = cached
+        self.maxs = []
         super().__init__()
+
+    def reset_state(self):
+        self.free_memory = 0
+        self.maxs = []
 
     def set_free(self):
         pynvml.nvmlInit()
@@ -44,8 +49,11 @@ class GPUAutoTuner(AutoTunerBase):
         info = pynvml.nvmlDeviceGetMemoryInfo(handle)
         self.free_memory = info.free * 0.9
 
+    def set_max(self):
+        self.maxs.append(torch.cuda.max_memory_allocated() - self.cached)
+
     def get_max(self):
-        return torch.cuda.max_memory_allocated() - self.cached
+        return max(self.maxs)
 
     def search(self, g):
         curr_node = g.number_of_dst_nodes()

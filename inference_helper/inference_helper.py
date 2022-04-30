@@ -215,9 +215,12 @@ class AutoInferenceHelper(InferenceHelperBase):
         for input_nodes, output_nodes, blocks in dataloader:
             profiler.tag()
             try:
-                profiler.record_name("total input nodes", input_nodes.shape[0])
+                auto_tuner.reset_state()
+                torch.cuda.empty_cache()
                 auto_tuner.set_free()
-                torch.cuda.reset_peak_memory_stats()
+
+                profiler.record_name("total input nodes", input_nodes.shape[0])
+
                 new_args = get_new_arg_input(layer.inputs, self._data_manager, input_nodes, 
                     blocks[0], self._device, self._use_uva)
                 profiler.tag()
@@ -235,6 +238,8 @@ class AutoInferenceHelper(InferenceHelperBase):
                 rets = update_ret_output(output_vals, rets, input_nodes, output_nodes, blocks)
                 del output_vals
                 profiler.tag()
+
+                auto_tuner.set_max()
                 nxt_max_node, nxt_max_edge = auto_tuner.search(blocks[0])
                 # memorys.append(torch.cuda.max_memory_allocated() // 1024 ** 2)
                 # max_memory = max(torch.cuda.max_memory_allocated() // 1024 ** 2, max_memory)
@@ -251,6 +256,7 @@ class AutoInferenceHelper(InferenceHelperBase):
                 dataloader.modify_max_node(nxt_max_node)
                 dataloader.modify_max_edge(nxt_max_edge)
                 torch.cuda.empty_cache()
+                torch.cuda.reset_peak_memory_stats()
                 profiler.record_and_reset()
 
         if self._use_uva:
