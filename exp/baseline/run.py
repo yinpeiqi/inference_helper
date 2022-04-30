@@ -86,6 +86,7 @@ class OtherDataset(DGLDataset):
                 save_graphs(reorder_bigraph_path, [self._graph])
             else:
                 self._graph, _ = load_graphs(reorder_bigraph_path)
+                self._graph = self._graph[0]
         else:
             bigraph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-bi.bin')
             if not os.path.exists(bigraph_path):
@@ -93,7 +94,8 @@ class OtherDataset(DGLDataset):
                 self._graph = dgl.to_bidirected(graphs[0])
                 save_graphs(bigraph_path, [self._graph])
             else:
-                self._graph, _ = load_graphs(bigraph_path)            
+                self._graph, _ = load_graphs(bigraph_path)  
+                self._graph = self._graph[0]          
 
     def __getitem__(self, idx):
         assert idx == 0, "This dataset only has one graph"
