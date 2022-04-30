@@ -70,7 +70,8 @@ class OtherDataset(DGLDataset):
 
         if self.use_reorder:
             reorder_graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-reorder.bin')
-            if not os.path.exists(reorder_graph_path):
+            reorder_bigraph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-bi-reorder.bin')
+            if not os.path.exists(reorder_graph_path) and not os.path.exists(reorder_bigraph_path):
                 graphs, _ = load_graphs(graph_path)
                 t1 = time.time()
                 print("Reordering the graph...")
@@ -78,7 +79,6 @@ class OtherDataset(DGLDataset):
                 print("Reorder is done, cost ", time.time()-t1)
                 save_graphs(reorder_graph_path, [self._graph])
             
-            reorder_bigraph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-bi-reorder.bin')
             if not os.path.exists(reorder_bigraph_path):
                 graphs, _ = load_graphs(reorder_graph_path)
                 print(graphs)
