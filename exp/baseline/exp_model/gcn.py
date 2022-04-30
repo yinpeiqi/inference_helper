@@ -66,6 +66,7 @@ class StochasticTwoLayerGCN(nn.Module):
             profiler.record_and_reset()
             # Within a layer, iterate over nodes in batches
             for input_nodes, output_nodes, blocks in dataloader:
+                torch.cuda.empty_cache()
                 profiler.tag()
                 profiler.record_name("total input nodes", input_nodes.shape[0])
                 block = blocks[0].to(device)
