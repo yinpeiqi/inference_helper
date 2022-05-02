@@ -81,7 +81,6 @@ class OtherDataset(DGLDataset):
             
             if not os.path.exists(reorder_bigraph_path):
                 graphs, _ = load_graphs(reorder_graph_path)
-                print(graphs)
                 self._graph = dgl.to_bidirected(graphs[0])
                 save_graphs(reorder_bigraph_path, [self._graph])
             else:
@@ -90,7 +89,7 @@ class OtherDataset(DGLDataset):
         else:
             bigraph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-bi.bin')
             if not os.path.exists(bigraph_path):
-                graphs, _ = load_graphs(bigraph_path)
+                graphs, _ = load_graphs(graph_path)
                 self._graph = dgl.to_bidirected(graphs[0])
                 save_graphs(bigraph_path, [self._graph])
             else:
