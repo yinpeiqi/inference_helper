@@ -25,12 +25,19 @@ class InferenceHelperBase():
         self._data_manager = DataManager(device, use_uva)
         self._debug = debug
 
-    def _trace_output_shape(self, arg2val_map):
+    def _trace_output_shape(self, args):
+        first_layer_inputs = (dgl.graph(([0], [0]), device=self._device),)
+        for arg in tuple(args):
+            first_layer_inputs += (arg[[0]].to(self._device),)
+        arg2val_map = {}
+        for val, arg_name in zip(first_layer_inputs, self._schema.first_layer_input):
+            arg_node = self._schema.name2arg_map[arg_name]
+            arg2val_map[arg_node] = val
         ret_shapes = [[] for _ in range(self._schema.layers_count)]
         for layer, func in zip(self._schema.layers, self._funcs):
-            fake_graph = dgl.graph((torch.tensor([0]), torch.tensor([0])), device=self._device)
-            device = self._device if not isinstance(self._device, list) else self._device[0]
-            new_args = get_new_arg_input(layer.inputs, arg2val_map, [0], fake_graph, device)
+            new_args = ()
+            for arg_node in layer.inputs:
+                new_args += (arg2val_map[arg_node],)
             output_vals = func(*new_args)
             if not isinstance(output_vals, tuple):
                 output_vals = (output_vals,)
@@ -66,13 +73,10 @@ class InferenceHelperBase():
         first_layer_inputs = (inference_graph,) + tuple(args)
         if len(first_layer_inputs) != len(self._schema.first_layer_input):
             raise Exception("layer's input not match with args.")
-        arg2val_map = {} # this arg2val map only used for trace the output shape
         for val, arg_name in zip(first_layer_inputs, self._schema.first_layer_input):
             arg_node = self._schema.name2arg_map[arg_name]
-            arg2val_map[arg_node] = val
             self._data_manager[arg_node] = val
-        ret_shapes = self._trace_output_shape(arg2val_map)
-        del arg2val_map
+        ret_shapes = self._trace_output_shape(args)
 
         for layer, func in zip(self._schema.layers, self._funcs):
 
@@ -224,10 +228,11 @@ class AutoInferenceHelper(InferenceHelperBase):
                 new_args = get_new_arg_input(layer.inputs, self._data_manager, input_nodes, 
                     blocks[0], self._device, self._use_uva)
                 profiler.tag()
-                # if isinstance(new_args[0], torch.Tensor):
-                #     print(new_args[1], new_args[0].shape, (t2-t1)*1000*1000 / new_args[0].shape[0]*new_args[0].shape[1])
-                # else:
-                #     print(new_args[0], new_args[1].shape, (t2-t1)*1000*1000 / new_args[1].shape[0]*new_args[1].shape[1])
+                if isinstance(new_args[0], torch.Tensor):
+                    h = new_args[0]
+                else:
+                    h = new_args[1]
+                print(h.shape, "%.2f"%(profiler.last()), "s;", "%.2f"%(h.shape[0]*h.shape[1]*4/1000**3), "GB;", "%.2f"%(h.shape[0]*h.shape[1]*4 / profiler.last() / 1000**3), "GB/s")
 
                 output_vals = func(*new_args)
                 del new_args
