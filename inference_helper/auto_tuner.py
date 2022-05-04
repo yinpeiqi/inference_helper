@@ -43,11 +43,11 @@ class GPUAutoTuner(AutoTunerBase):
         self.free_memory = 0
         self.maxs = []
 
-    def set_free(self):
+    def set_free(self, rate=0.9):
         pynvml.nvmlInit()
         handle = pynvml.nvmlDeviceGetHandleByIndex(0)
         info = pynvml.nvmlDeviceGetMemoryInfo(handle)
-        self.free_memory = info.free * 0.9
+        self.free_memory = info.free * rate
 
     def set_max(self):
         self.maxs.append(torch.cuda.max_memory_allocated() - self.cached)

@@ -63,7 +63,7 @@ class JKNet(nn.Module):
 
         return self.output(agged)
 
-    def inference(self, g, batch_size, device, x, use_uva):
+    def inference(self, g, batch_size, device, x, nids, use_uva):
         for k in list(g.ndata.keys()):
             g.ndata.pop(k)
         for k in list(g.edata.keys()):
@@ -73,7 +73,6 @@ class JKNet(nn.Module):
         for l, layer in enumerate(self.layers):
             feat_lst.append(torch.zeros(g.num_nodes(), self.n_hidden))
 
-            nids = torch.arange(g.num_nodes()).to(g.device)
             if use_uva:
                 pin_memory_inplace(x)
                 nids.to(device)
@@ -119,7 +118,7 @@ class JKNet(nn.Module):
             x = feat_lst[-1]
 
         y = torch.zeros(g.num_nodes(), self.n_classes)
-        nids = torch.arange(g.num_nodes()).to(g.device)
+
         if use_uva:
             for feat in feat_lst:
                 pin_memory_inplace(feat)

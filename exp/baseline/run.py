@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import dgl
 import numpy as np
 import time
+import random
 import tqdm
 import argparse
 from exp_model.gcn import StochasticTwoLayerGCN
@@ -192,7 +193,16 @@ def load_ogb(name, reorder):
     graph.ndata['test_mask'] = test_mask
     return graph, num_labels
 
+def setup_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+
+
 def train(args):
+    setup_seed(20)
     if args.dataset == "reddit":
         dataset = load_reddit()
     elif args.dataset in ("friendster", "orkut", "livejournal1"):
@@ -251,7 +261,7 @@ def train(args):
         if args.topdown:
             print(args.num_layers, args.model, "TOP DOWN", args.batch_size, args.dataset, args.num_heads, args.num_hidden)
             st = time.time()
-            nids = torch.arange(g.number_of_nodes()).to(g.device)
+            nids = torch.randperm(g.number_of_nodes()).to(g.device)
             sampler = dgl.dataloading.MultiLayerFullNeighborSampler(args.num_layers)
             dataloader = dgl.dataloading.NodeDataLoader(
                 g, nids, sampler, batch_size=args.batch_size, 
@@ -291,7 +301,7 @@ def train(args):
         elif args.auto:
             print(args.num_layers, args.model, "auto", args.dataset, args.num_heads, args.num_hidden)
             st = time.time()
-            helper = AutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, debug = args.debug)
+            helper = AutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, free_rate=args.free_rate, use_random=not args.reorder, debug = args.debug)
             helper_pred = helper.inference(g, feat)
             cost_time = time.time() - st
             helper_score = (torch.argmax(helper_pred, dim=1) == labels).float().sum() / len(helper_pred)
@@ -303,7 +313,11 @@ def train(args):
             else:
                 print(args.num_layers, args.model, "GPU", args.batch_size, args.dataset, args.num_heads, args.num_hidden)
             st = time.time()
-            pred = model.inference(g, args.batch_size, torch.device(device), feat, args.use_uva)
+            if args.reorder:
+                nids = torch.arange(g.number_of_nodes()).to(g.device)
+            else:
+                nids = torch.randperm(g.number_of_nodes()).to(g.device)
+            pred = model.inference(g, args.batch_size, torch.device(device), feat, nids, args.use_uva)
             cost_time = time.time() - st
             func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
             if args.gpu != -1:
@@ -315,6 +329,7 @@ if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
     argparser.add_argument('--reorder', help="use the reordered graph", action="store_true")
     argparser.add_argument('--use-uva', help="use the pinned memory", action="store_true")
+    argparser.add_argument('--free-rate', help="free memory rate", type=float, default=0.9)
 
     # Different inference mode. 
     argparser.add_argument('--topdown', action="store_true")

@@ -178,11 +178,16 @@ class EdgeControlInferenceHelper(InferenceHelperBase):
 
 
 class AutoInferenceHelper(InferenceHelperBase):
-    def __init__(self, module: nn.Module, device, use_uva, debug = False):
+    def __init__(self, module: nn.Module, device, use_uva, free_rate, use_random, debug = False):
+        self.free_rate = free_rate
+        self.use_random = use_random
         super().__init__(module, device, use_uva, debug)
 
     def before_inference(self, graph, *args):
-        self.nids = torch.arange(graph.number_of_nodes()).to(graph.device)
+        if not self.use_random:
+            self.nids = torch.arange(graph.number_of_nodes()).to(graph.device)
+        else:
+            self.nids = torch.randperm(graph.number_of_nodes()).to(graph.device)
         in_degrees = graph.in_degrees(self.nids).numpy()
         prefix_sum_in_degrees = np.cumsum(in_degrees)
         self.prefix_sum_in_degrees = [0]
@@ -221,18 +226,18 @@ class AutoInferenceHelper(InferenceHelperBase):
             try:
                 auto_tuner.reset_state()
                 torch.cuda.empty_cache()
-                auto_tuner.set_free()
+                auto_tuner.set_free(self.free_rate)
 
                 profiler.record_name("total input nodes", input_nodes.shape[0])
 
                 new_args = get_new_arg_input(layer.inputs, self._data_manager, input_nodes, 
                     blocks[0], self._device, self._use_uva)
                 profiler.tag()
-                if isinstance(new_args[0], torch.Tensor):
-                    h = new_args[0]
-                else:
-                    h = new_args[1]
-                print(h.shape, "%.2f"%(profiler.last()), "s;", "%.2f"%(h.shape[0]*h.shape[1]*4/1000**3), "GB;", "%.2f"%(h.shape[0]*h.shape[1]*4 / profiler.last() / 1000**3), "GB/s")
+                # if isinstance(new_args[0], torch.Tensor):
+                #     h = new_args[0]
+                # else:
+                #     h = new_args[1]
+                # print(h.shape, "%.2f"%(profiler.last()), "s;", "%.2f"%(h.shape[0]*h.shape[1]*4/1000**3), "GB;", "%.2f"%(h.shape[0]*h.shape[1]*4 / profiler.last() / 1000**3), "GB/s")
 
                 output_vals = func(*new_args)
                 del new_args

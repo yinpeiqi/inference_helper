@@ -60,7 +60,7 @@ class GAT(nn.Module):
         logits = self.gat_layers[-1](g, h).mean(1)
         return logits
 
-    def inference(self, g, batch_size, device, x, use_uva = False):
+    def inference(self, g, batch_size, device, x, nids, use_uva = False):
         for k in list(g.ndata.keys()):
             g.ndata.pop(k)
         for k in list(g.edata.keys()):
@@ -75,7 +75,6 @@ class GAT(nn.Module):
             else:
                 y = th.zeros(g.number_of_nodes(), self.out_features)
 
-            nids = th.arange(g.number_of_nodes()).to(g.device)
             if use_uva:
                 pin_memory_inplace(x)
                 nids = nids.to(device)

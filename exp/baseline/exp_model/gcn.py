@@ -31,7 +31,7 @@ class StochasticTwoLayerGCN(nn.Module):
             x = F.relu(conv(blocks, (x, x_dst)))
         return x
 
-    def inference(self, g, batch_size, device, x, use_uva = False):
+    def inference(self, g, batch_size, device, x, nids, use_uva = False):
         if use_uva:
             for k in list(g.ndata.keys()):
                 g.ndata.pop(k)
@@ -47,8 +47,7 @@ class StochasticTwoLayerGCN(nn.Module):
                             self.hidden_features
                             if l != self.n_layers - 1
                             else self.out_features)
-            
-            nids = torch.arange(g.number_of_nodes()).to(g.device)
+
             if use_uva:
                 pin_memory_inplace(x)
                 nids = nids.to(device)
