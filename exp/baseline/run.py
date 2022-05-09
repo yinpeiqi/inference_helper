@@ -22,7 +22,7 @@ import dgl.backend as backend
 
 
 class OtherDataset(DGLDataset):
-    raw_dir = '../dataset/'
+    raw_dir = '/data/snap/'
 
     def __init__(self, name, force_reload=False, use_reorder=False,
                 verbose=False, transform=None):
@@ -125,7 +125,7 @@ def load_reddit():
     return g, data.num_classes
 
 class OgbnDataset(DglNodePropPredDataset):
-    def __init__(self, name, root = 'dataset', use_reorder = False, meta_dict = None):
+    def __init__(self, name, root = '/data/ogb', use_reorder = False, meta_dict = None):
         self.use_reorder = use_reorder
         super().__init__(name, root, meta_dict)
 
@@ -235,6 +235,7 @@ def train(args):
         model = JKNet(in_feats, hidden_feature, num_classes, args.num_layers)
     else:
         raise NotImplementedError()
+    
 
     if args.gpu == -1:
         device = "cpu"
@@ -307,6 +308,16 @@ def train(args):
             helper_score = (torch.argmax(helper_pred, dim=1) == labels).float().sum() / len(helper_pred)
             print("Helper Inference: {}, inference time: {}".format(helper_score, cost_time))
 
+        elif args.cache:
+            print('Inference with cached features')
+            st = time.time()
+            pred = model.inference_with_cache(g, args.batch_size, torch.device(device), feat, args)
+            cost_time = time.time() - st
+            func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
+            if args.gpu != -1:
+                print("max memory:", torch.cuda.max_memory_allocated() // 1024 ** 2)
+            print("Origin Inference: {}, inference time: {}".format(func_score, cost_time))
+
         else:
             if args.gpu == -1:
                 print(args.num_layers, args.model, "CPU", args.batch_size, args.dataset, args.num_heads, args.num_hidden)
@@ -337,6 +348,7 @@ if __name__ == '__main__':
     argparser.add_argument('--gpufull', action="store_true")
     argparser.add_argument('--gpu', help="GPU device ID. Use -1 for CPU training", type=int, default=0)
     argparser.add_argument('--auto', action="store_true")
+    argparser.add_argument('--cache', action="store_true")
 
     argparser.add_argument('--model', help="can be GCN, GAT, SAGE and JKNET", type=str, default='GCN')
     argparser.add_argument('--debug', action="store_true")
@@ -346,6 +358,7 @@ if __name__ == '__main__':
     argparser.add_argument('--num-heads', type=int, default=-1)
     argparser.add_argument('--num-layers', type=int, default=2)
     argparser.add_argument('--batch-size', type=int, default=2000)
+    argparser.add_argument('--cache-size', type=int, default=4)
     args = argparser.parse_args()
 
     train(args)
