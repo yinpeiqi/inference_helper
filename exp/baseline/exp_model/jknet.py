@@ -27,6 +27,7 @@ class JKNet(nn.Module):
         
         self.n_hidden = hid_dim
         self.n_classes = out_dim
+        self.out_features = out_dim
         self.mode = mode
         self.dropout = nn.Dropout(dropout)
         self.layers = nn.ModuleList()
@@ -54,12 +55,11 @@ class JKNet(nn.Module):
 
     def forward(self, g, feats):
         feat_lst = []
-        for layer in self.layers:
-            feats = self.dropout(layer(g, feats))
-            feat_lst.append(feats)
-
+        for i, layer in enumerate(self.layers):
+            feats = self.dropout(layer(g[i], feats))
+            feat_lst.append(feats[:g[-1].num_src_nodes()])
         jumped = self.jump(feat_lst)
-        agged = self.agge(g, jumped)
+        agged = self.agge(g[-1], jumped)
 
         return self.output(agged)
 
@@ -68,17 +68,6 @@ class JKNet(nn.Module):
         for layer in self.layers:
             feats = self.dropout(layer(g, feats))
             feat_lst.append(feats)
-
-        jumped = self.jump(feat_lst)
-        agged = self.agge(g, jumped)
-
-        return self.output(agged)
-
-    def forward_batch(self, g, feats, output_nodes):
-        feat_lst = []
-        for layer in self.layers:
-            feats = self.dropout(layer(g, feats))
-            feat_lst.append(feats[output_nodes])
 
         jumped = self.jump(feat_lst)
         agged = self.agge(g, jumped)

@@ -265,7 +265,10 @@ def train(args):
             print(args.num_layers, args.model, "TOP DOWN", args.batch_size, args.dataset, args.num_heads, args.num_hidden)
             st = time.time()
             nids = torch.randperm(g.number_of_nodes()).to(g.device)
-            sampler = dgl.dataloading.MultiLayerFullNeighborSampler(args.num_layers)
+            if args.model == "JKNET":
+                sampler = dgl.dataloading.MultiLayerFullNeighborSampler(args.num_layers + 1)
+            else:
+                sampler = dgl.dataloading.MultiLayerFullNeighborSampler(args.num_layers)
             dataloader = dgl.dataloading.NodeDataLoader(
                 g, nids, sampler, batch_size=args.batch_size, 
                 shuffle=False, drop_last=False, use_uva=True, device=device, num_workers=0)
@@ -275,10 +278,7 @@ def train(args):
             for input_nodes, output_nodes, blocks in dataloader:
                 print(blocks)
                 input_features = gather_pinned_tensor_rows(feat, input_nodes)
-                if args.model == "JKNET":
-                    pred[output_nodes] = model.forward_batch(blocks, input_features, output_nodes).cpu()
-                else:
-                    pred[output_nodes] = model(blocks, input_features).cpu()
+                pred[output_nodes] = model(blocks, input_features).cpu()
                 print(time.time()-t)
                 t = time.time()
             unpin_memory_inplace(feat)
