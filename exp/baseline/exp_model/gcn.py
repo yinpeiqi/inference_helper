@@ -14,10 +14,13 @@ class StochasticTwoLayerGCN(nn.Module):
         self.out_features = out_features
         self.convs = nn.ModuleList()
         self.n_layers = n_layer
-        self.convs.append(dgl.nn.GraphConv(in_features, hidden_features))
-        for l in range(n_layer - 2):
-            self.convs.append(dgl.nn.GraphConv(hidden_features, hidden_features))
-        self.convs.append(dgl.nn.GraphConv(hidden_features, out_features))
+        if n_layer == 1:
+            self.convs.append(dgl.nn.GraphConv(in_features, out_features))
+        else:
+            self.convs.append(dgl.nn.GraphConv(in_features, hidden_features))
+            for l in range(n_layer - 2):
+                self.convs.append(dgl.nn.GraphConv(hidden_features, hidden_features))
+            self.convs.append(dgl.nn.GraphConv(hidden_features, out_features))
 
     def forward(self, blocks, x):
         for i, conv in enumerate(self.convs):
@@ -48,6 +51,8 @@ class StochasticTwoLayerGCN(nn.Module):
                             if l != self.n_layers - 1
                             else self.out_features)
 
+            memorys = []
+            nodes = []
             if use_uva:
                 pin_memory_inplace(x)
                 nids = nids.to(device)
@@ -65,6 +70,7 @@ class StochasticTwoLayerGCN(nn.Module):
             profiler.record_and_reset()
             # Within a layer, iterate over nodes in batches
             for input_nodes, output_nodes, blocks in dataloader:
+                # print(blocks, torch.cuda.max_memory_allocated() // 1024 ** 2)
                 torch.cuda.empty_cache()
                 profiler.tag()
                 profiler.record_name("total input nodes", input_nodes.shape[0])
@@ -85,13 +91,20 @@ class StochasticTwoLayerGCN(nn.Module):
                 update_out_in_chunks(y, output_nodes, h)
                 profiler.tag()
 
+                memorys.append(torch.cuda.max_memory_allocated() // 1024 ** 2)
+                # print(torch.cuda.max_memory_allocated() // 1024 ** 2)
+                nodes.append(output_nodes.shape[0])
                 torch.cuda.empty_cache()
+                torch.cuda.reset_peak_memory_stats()
                 profiler.record_and_reset()
 
             if use_uva:
                 unpin_memory_inplace(x)
             x = y
             profiler.show()
+            print(max(memorys))
+            # print(memorys)
+            # print(nodes)
 
         return y
 

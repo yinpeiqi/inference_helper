@@ -63,6 +63,28 @@ class JKNet(nn.Module):
 
         return self.output(agged)
 
+    def forward_full(self, g, feats):
+        feat_lst = []
+        for layer in self.layers:
+            feats = self.dropout(layer(g, feats))
+            feat_lst.append(feats)
+
+        jumped = self.jump(feat_lst)
+        agged = self.agge(g, jumped)
+
+        return self.output(agged)
+
+    def forward_batch(self, g, feats, output_nodes):
+        feat_lst = []
+        for layer in self.layers:
+            feats = self.dropout(layer(g, feats))
+            feat_lst.append(feats[output_nodes])
+
+        jumped = self.jump(feat_lst)
+        agged = self.agge(g, jumped)
+
+        return self.output(agged)
+
     def inference(self, g, batch_size, device, x, nids, use_uva):
         for k in list(g.ndata.keys()):
             g.ndata.pop(k)

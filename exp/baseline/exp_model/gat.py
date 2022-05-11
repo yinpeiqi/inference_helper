@@ -33,19 +33,24 @@ class GAT(nn.Module):
         self.heads = heads
         self.out_features = num_classes
         # input projection (no residual)
-        self.gat_layers.append(GATConv(
-            in_dim, num_hidden, heads[0],
-            feat_drop, attn_drop, negative_slope, False, self.activation, allow_zero_in_degree=True))
-        # hidden layers
-        for l in range(1, num_layers - 1):
-            # due to multi-head, the in_dim = num_hidden * num_heads
+        if num_layers == 1:
             self.gat_layers.append(GATConv(
-                num_hidden * heads[l-1], num_hidden, heads[l],
-                feat_drop, attn_drop, negative_slope, residual, self.activation, allow_zero_in_degree=True))
-        # output projection
-        self.gat_layers.append(GATConv(
-            num_hidden * heads[-2], num_classes, heads[-1],
-            feat_drop, attn_drop, negative_slope, residual, None, allow_zero_in_degree=True))
+            in_dim, num_classes, heads[0],
+            feat_drop, attn_drop, negative_slope, False, self.activation, allow_zero_in_degree=True))
+        else:
+            self.gat_layers.append(GATConv(
+                in_dim, num_hidden, heads[0],
+                feat_drop, attn_drop, negative_slope, False, self.activation, allow_zero_in_degree=True))
+            # hidden layers
+            for l in range(1, num_layers - 1):
+                # due to multi-head, the in_dim = num_hidden * num_heads
+                self.gat_layers.append(GATConv(
+                    num_hidden * heads[l-1], num_hidden, heads[l],
+                    feat_drop, attn_drop, negative_slope, residual, self.activation, allow_zero_in_degree=True))
+            # output projection
+            self.gat_layers.append(GATConv(
+                num_hidden * heads[-2], num_classes, heads[-1],
+                feat_drop, attn_drop, negative_slope, residual, None, allow_zero_in_degree=True))
 
     def forward(self, g, inputs):
         h = inputs

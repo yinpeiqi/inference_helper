@@ -224,7 +224,6 @@ def train(args):
         shuffle=True,
         drop_last=False,
         num_workers=4)
-
     if args.model == "GCN":
         model = StochasticTwoLayerGCN(args.num_layers, in_feats, hidden_feature, num_classes)
     elif args.model == "SAGE":
@@ -259,28 +258,35 @@ def train(args):
 
     with torch.no_grad():
         if args.topdown:
+            for k in list(g.ndata.keys()):
+                g.ndata.pop(k)
+            for k in list(g.edata.keys()):
+                g.edata.pop(k)
             print(args.num_layers, args.model, "TOP DOWN", args.batch_size, args.dataset, args.num_heads, args.num_hidden)
             st = time.time()
             nids = torch.randperm(g.number_of_nodes()).to(g.device)
             sampler = dgl.dataloading.MultiLayerFullNeighborSampler(args.num_layers)
             dataloader = dgl.dataloading.NodeDataLoader(
                 g, nids, sampler, batch_size=args.batch_size, 
-                shuffle=True, drop_last=False, use_uva=False, device=device, num_workers=0)
+                shuffle=False, drop_last=False, use_uva=True, device=device, num_workers=0)
             pred = torch.zeros(g.number_of_nodes(), model.out_features)
             pin_memory_inplace(feat)
             t = time.time()
             for input_nodes, output_nodes, blocks in dataloader:
                 print(blocks)
                 input_features = gather_pinned_tensor_rows(feat, input_nodes)
-                pred[output_nodes] = model(blocks, input_features).cpu()
+                if args.model == "JKNET":
+                    pred[output_nodes] = model.forward_batch(blocks, input_features, output_nodes).cpu()
+                else:
+                    pred[output_nodes] = model(blocks, input_features).cpu()
                 print(time.time()-t)
                 t = time.time()
             unpin_memory_inplace(feat)
             cost_time = time.time() - st
-            func_score = (torch.argmax(pred, dim=1) == labels.to(device)).float().sum() / len(pred)
+            func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
             print("TOP DOWN Inference: {}, inference time: {}".format(func_score, cost_time))
 
-        if args.gpufull:
+        elif args.gpufull:
             print(args.num_layers, args.model, "GPU FULL", args.dataset, args.num_heads, args.num_hidden)
             st = time.time()
             pred = model.forward_full(g.to(device), feat.to(device))
@@ -316,8 +322,9 @@ def train(args):
             if args.reorder:
                 nids = torch.arange(g.number_of_nodes()).to(g.device)
             else:
-                nids = torch.randperm(g.number_of_nodes()).to(g.device)
+                nids = torch.arange(g.number_of_nodes()).to(g.device)
             pred = model.inference(g, args.batch_size, torch.device(device), feat, nids, args.use_uva)
+            # pred = model.inference_auto(g, torch.device(device), feat, nids, args.use_uva)
             cost_time = time.time() - st
             func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
             if args.gpu != -1:
