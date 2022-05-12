@@ -275,12 +275,12 @@ def train(args):
             pred = torch.zeros(g.number_of_nodes(), model.out_features)
             pin_memory_inplace(feat)
             t = time.time()
-            for input_nodes, output_nodes, blocks in dataloader:
-                print(blocks)
+            for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
+                # print(blocks)
                 input_features = gather_pinned_tensor_rows(feat, input_nodes)
                 pred[output_nodes] = model(blocks, input_features).cpu()
-                print(time.time()-t)
-                t = time.time()
+                # print(time.time()-t)
+                # t = time.time()
             unpin_memory_inplace(feat)
             cost_time = time.time() - st
             func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
@@ -306,8 +306,10 @@ def train(args):
 
         elif args.auto:
             print(args.num_layers, args.model, "auto", args.dataset, args.num_heads, args.num_hidden)
-            st = time.time()
             helper = AutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, free_rate=args.free_rate, use_random=not args.reorder, debug = args.debug)
+            helper.ret_shapes = helper._trace_output_shape((feat,))
+            torch.cuda.synchronize()
+            st = time.time()
             helper_pred = helper.inference(g, feat)
             cost_time = time.time() - st
             helper_score = (torch.argmax(helper_pred, dim=1) == labels).float().sum() / len(helper_pred)

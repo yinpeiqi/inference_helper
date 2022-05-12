@@ -76,7 +76,7 @@ class InferenceHelperBase():
         for val, arg_name in zip(first_layer_inputs, self._schema.first_layer_input):
             arg_node = self._schema.name2arg_map[arg_name]
             self._data_manager[arg_node] = val
-        ret_shapes = self._trace_output_shape(args)
+        ret_shapes = self.ret_shapes
 
         for layer, func in zip(self._schema.layers, self._funcs):
 
@@ -187,7 +187,7 @@ class AutoInferenceHelper(InferenceHelperBase):
         if not self.use_random:
             self.nids = torch.arange(graph.number_of_nodes()).to(graph.device)
         else:
-            self.nids = torch.randperm(graph.number_of_nodes()).to(graph.device)
+            self.nids = torch.arange(graph.number_of_nodes()).to(graph.device)
         in_degrees = graph.in_degrees(self.nids).numpy()
         prefix_sum_in_degrees = np.cumsum(in_degrees)
         self.prefix_sum_in_degrees = [0]
@@ -217,8 +217,9 @@ class AutoInferenceHelper(InferenceHelperBase):
             shuffle=False)
 
         # pbar = tqdm.tqdm(total=graph.number_of_nodes())
-        # max_memory = 0
-        # memorys = []
+        max_memory = 0
+        memorys = []
+        nodes = []
         profiler = Profiler()
         profiler.record_and_reset()
         for input_nodes, output_nodes, blocks in dataloader:
@@ -251,8 +252,9 @@ class AutoInferenceHelper(InferenceHelperBase):
 
                 auto_tuner.set_max()
                 nxt_max_node, nxt_max_edge = auto_tuner.search(blocks[0])
-                # memorys.append(torch.cuda.max_memory_allocated() // 1024 ** 2)
-                # max_memory = max(torch.cuda.max_memory_allocated() // 1024 ** 2, max_memory)
+                memorys.append(torch.cuda.max_memory_allocated() // 1024 ** 2)
+                nodes.append(output_nodes.shape[0])
+                max_memory = max(torch.cuda.max_memory_allocated() // 1024 ** 2, max_memory)
                 # pbar.update(output_nodes.shape[0])
 
             except Exception as e:
@@ -273,7 +275,8 @@ class AutoInferenceHelper(InferenceHelperBase):
             self._data_manager.unpin_data_inplace(layer)
 
         # pbar.close()
-        # print(memorys)
+        print(memorys)
+        print(nodes)
         profiler.show()
-        # print("maximum memory allocated: ", max_memory)
+        print("maximum memory allocated: ", max_memory)
         return rets
