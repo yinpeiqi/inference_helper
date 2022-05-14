@@ -6,7 +6,7 @@ import tqdm
 from inference_helper.profiler import Profiler
 from dgl.utils import pin_memory_inplace, unpin_memory_inplace, gather_pinned_tensor_rows
 from inference_helper.utils import update_out_in_chunks
-
+import numpy as np
 class StochasticTwoLayerGCN(nn.Module):
     def __init__(self, n_layer, in_features, hidden_features, out_features):
         super().__init__()
@@ -46,10 +46,15 @@ class StochasticTwoLayerGCN(nn.Module):
         """
         # Compute representations layer by layer
         for l, layer in enumerate(self.convs):
-            y = torch.zeros(g.number_of_nodes(),
+            # y = torch.zeros(g.number_of_nodes(),
+            #                 self.hidden_features
+            #                 if l != self.n_layers - 1
+            #                 else self.out_features)
+            shape = (g.number_of_nodes(),
                             self.hidden_features
                             if l != self.n_layers - 1
                             else self.out_features)
+            y = torch.as_tensor(np.memmap(f"/ssd/feat_{l}.npy",dtype=np.float32, mode="w+", shape=shape, ))
 
             memorys = []
             nodes = []
@@ -80,7 +85,7 @@ class StochasticTwoLayerGCN(nn.Module):
                 if use_uva:
                     h = gather_pinned_tensor_rows(x, input_nodes)
                 else:
-                    h = x[input_nodes].to(device)
+                    h = torch.as_tensor(x[input_nodes]).to(device)
                 profiler.tag()
                 # Compute output.  Note that this computation is the same
                 # but only for a single layer.
@@ -88,7 +93,9 @@ class StochasticTwoLayerGCN(nn.Module):
                 h = F.relu(layer(block, (h, h_dst)))
                 profiler.tag()
                 # Copy to output back to CPU.
-                update_out_in_chunks(y, output_nodes, h)
+                output_nodes_cpu = output_nodes.cpu()
+                h_cpu = h.cpu()
+                update_out_in_chunks(y, output_nodes_cpu, h_cpu)
                 profiler.tag()
 
                 memorys.append(torch.cuda.max_memory_allocated() // 1024 ** 2)
