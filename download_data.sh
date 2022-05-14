@@ -1,3 +1,5 @@
+python create_feature_in_ssd.py
+
 python exp/baseline/run.py --dataset ogbn-products --load-data --reorder
 python exp/baseline/run.py --dataset ogbn-products --load-data
 

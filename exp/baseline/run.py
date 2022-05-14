@@ -207,7 +207,8 @@ def load_data(args):
         features = np.random.rand(self.graph.number_of_nodes(), dim)
         self.graph.ndata['feat'] = backend.tensor(features, dtype=backend.data_type_dict['float32'])
     else:
-        raise Exception
+        self.graph.ndata['feat'] = np.memmap("/ssd/{args.dataset}-feat.npy", dtype=np.float32, mode='r')
+        print(self.graph.ndata['feat'])
     return dataset
 
 def train(args):
