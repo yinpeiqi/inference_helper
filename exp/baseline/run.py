@@ -159,6 +159,8 @@ class OgbnDataset(DglNodePropPredDataset):
                 self.graph.ndata.pop("feat")
                 save_graphs(pre_processed_file_path, self.graph, label_dict)
                 self.graph, _ = load_graphs(pre_processed_file_path)
+                if isinstance(self.graph, list):
+                    self.graph = self.graph[0]
                 features = np.random.rand(self.graph.number_of_nodes(), 100)
                 self.graph.ndata['feat'] = backend.tensor(features, dtype=backend.data_type_dict['float32'])
         else:
@@ -200,15 +202,18 @@ def setup_seed(seed):
     random.seed(seed)
     torch.backends.cudnn.deterministic = True
 
-
-def train(args):
-    setup_seed(20)
+def load_data(args):
     if args.dataset == "reddit":
         dataset = load_reddit()
     elif args.dataset in ("friendster", "orkut", "livejournal1"):
         dataset = load_other_dataset(args.dataset, args.num_hidden, args.reorder)
     else:
         dataset = load_ogb(args.dataset, args.reorder)
+    return dataset
+
+def train(args):
+    setup_seed(20)
+    dataset = load_data(args)
     g : dgl.DGLHeteroGraph = dataset[0]
     train_mask = g.ndata['train_mask']
     feat = g.ndata['feat']
@@ -358,6 +363,11 @@ if __name__ == '__main__':
     argparser.add_argument('--num-heads', type=int, default=2)
     argparser.add_argument('--num-layers', type=int, default=3)
     argparser.add_argument('--batch-size', type=int, default=2000)
+    argparser.add_argument('--load-data', action="store_true")
     args = argparser.parse_args()
 
-    train(args)
+    if args.load_data:
+        dataset = load_data(args)
+        print(dataset[0])
+    else:
+        train(args)
