@@ -1,4 +1,3 @@
-import json
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -7,15 +6,10 @@ import numpy as np
 import time
 import tqdm
 import argparse
-from exp_model.gcn import StochasticTwoLayerGCN
-from exp_model.sage import SAGE
-from exp_model.gat import  GAT
-from exp_model.jknet import JKNet
 from inference_helper import InferenceHelper, EdgeControlInferenceHelper, AutoInferenceHelper
 from dgl.utils import pin_memory_inplace, unpin_memory_inplace, gather_pinned_tensor_rows
 
 import os
-from pathlib import Path
 from dgl.data.dgl_dataset import DGLDataset
 from ogb.nodeproppred import DglNodePropPredDataset
 from dgl.data.utils import load_graphs, save_graphs
@@ -194,162 +188,32 @@ def load_ogb(name, reorder):
     graph.ndata['test_mask'] = test_mask
     return graph, num_labels
 
-def load_data(args):
-    if args.mmap:
-        dir = Path(f"./mmap/{args.dataset}_{args.reorder}/")
-        assert dir.exists()
-        g = dgl.load_graphs(str(dir / "graph.bin"))[0][0]
-        json_file = dir / "info.json"
-        info = json.load(json_file.open("r")) 
-        num_classes = info["num_classes"]
-        shape = info["shape"]
-        mmap_feat = np.memmap(dir / "feat.buf", dtype=np.float32, mode='w+', shape=tuple(shape))
-        g.ndata['feat'] = torch.as_tensor(mmap_feat)
-        return g, num_classes
-    else:
-        if args.dataset == "reddit":
-            dataset = load_reddit()
-        elif args.dataset in ("friendster", "orkut", "livejournal1"):
-            dataset = load_other_dataset(args.dataset, args.num_hidden, args.reorder)
-        else:
-            dataset = load_ogb(args.dataset, args.reorder)
-    return dataset
-
 def train(args):
-    dataset = load_data(args)
+    if args.dataset == "reddit":
+        dataset = load_reddit()
+    elif args.dataset in ("friendster", "orkut", "livejournal1"):
+        dataset = load_other_dataset(args.dataset, args.num_hidden, args.reorder)
+    else:
+        dataset = load_ogb(args.dataset, args.reorder)
     g : dgl.DGLHeteroGraph = dataset[0]
-    train_mask = g.ndata['train_mask']
-    feat = g.ndata['feat']
-    labels = g.ndata['label']
-    num_classes = dataset[1]
-    in_feats = feat.shape[1]
-    train_nid = torch.nonzero(train_mask, as_tuple=True)[0]
-    hidden_feature = args.num_hidden
-    sampler = dgl.dataloading.MultiLayerNeighborSampler([10, 25, 50])
-    dataloader = dgl.dataloading.NodeDataLoader(
-        g, train_nid, sampler,
-        batch_size=2000,
-        shuffle=True,
-        drop_last=False,
-        num_workers=4)
-
-    if args.model == "GCN":
-        model = StochasticTwoLayerGCN(args.num_layers, in_feats, hidden_feature, num_classes)
-    elif args.model == "SAGE":
-        model = SAGE(in_feats, hidden_feature, num_classes, args.num_layers, F.relu, 0.5)
-    elif args.model == "GAT":
-        model = GAT(args.num_layers, in_feats, hidden_feature, num_classes, [args.num_heads for _ in range(args.num_layers)], F.relu, 0.5, 0.5, 0.5, 0.5)
-    elif args.model == "JKNET":
-        model = JKNet(in_feats, hidden_feature, num_classes, args.num_layers)
-    else:
-        raise NotImplementedError()
-
-    if args.gpu == -1:
-        device = "cpu"
-    else:
-        device = "cuda:" + str(args.gpu)
-    model = model.to(torch.device(device))
-    opt = torch.optim.Adam(model.parameters())
-    loss_fcn = nn.CrossEntropyLoss()
-
-    for epoch in range(args.num_epochs):
-        for input_nodes, output_nodes, blocks in dataloader:
-            blocks = [b.to(torch.device(device)) for b in blocks]
-            input_features = feat[input_nodes].to(torch.device(device))
-            pred = model(blocks, input_features)
-            output_labels = labels[output_nodes].to(torch.device(device))
-            loss = loss_fcn(pred, output_labels)
-            opt.zero_grad()
-            loss.backward()
-            opt.step()
-            # We do not need to train the network, just to make sure it can run.
-            break
-
-    with torch.no_grad():
-        if args.topdown:
-            print(args.num_layers, args.model, "TOP DOWN", args.batch_size, args.dataset, args.num_heads, args.num_hidden)
-            st = time.time()
-            nids = torch.arange(g.number_of_nodes()).to(g.device)
-            sampler = dgl.dataloading.MultiLayerFullNeighborSampler(args.num_layers)
-            dataloader = dgl.dataloading.NodeDataLoader(
-                g, nids, sampler, batch_size=args.batch_size, 
-                shuffle=True, drop_last=False, use_uva=False, device=device, num_workers=0)
-            pred = torch.zeros(g.number_of_nodes(), model.out_features)
-            pin_memory_inplace(feat)
-            t = time.time()
-            for input_nodes, output_nodes, blocks in dataloader:
-                print(blocks)
-                input_features = gather_pinned_tensor_rows(feat, input_nodes)
-                pred[output_nodes] = model(blocks, input_features).cpu()
-                print(time.time()-t)
-                t = time.time()
-            unpin_memory_inplace(feat)
-            cost_time = time.time() - st
-            func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
-            print("TOP DOWN Inference: {}, inference time: {}".format(func_score, cost_time))
-
-        if args.gpufull:
-            print(args.num_layers, args.model, "GPU FULL", args.dataset, args.num_heads, args.num_hidden)
-            st = time.time()
-            pred = model.forward_full(g.to(device), feat.to(device))
-            cost_time = time.time() - st
-            func_score = (torch.argmax(pred, dim=1) == labels.to(device)).float().sum() / len(pred)
-            print("GPU Inference: {}, inference time: {}".format(func_score, cost_time))
-
-        elif args.cpufull:
-            print(args.num_layers, args.model, "CPU FULL", args.dataset, args.num_heads, args.num_hidden)
-            st = time.time()
-            model.to('cpu')
-            pred = model.forward_full(g, feat)
-            model.to(device)
-            cost_time = time.time() - st
-            func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
-            print("CPU Inference: {}, inference time: {}".format(func_score, cost_time))
-
-        elif args.auto:
-            print(args.num_layers, args.model, "auto", args.dataset, args.num_heads, args.num_hidden)
-            st = time.time()
-            helper = AutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, debug = args.debug)
-            helper_pred = helper.inference(g, feat)
-            cost_time = time.time() - st
-            helper_score = (torch.argmax(helper_pred, dim=1) == labels).float().sum() / len(helper_pred)
-            print("Helper Inference: {}, inference time: {}".format(helper_score, cost_time))
-
-        else:
-            if args.gpu == -1:
-                print(args.num_layers, args.model, "CPU", args.batch_size, args.dataset, args.num_heads, args.num_hidden)
-            else:
-                print(args.num_layers, args.model, "GPU", args.batch_size, args.dataset, args.num_heads, args.num_hidden)
-            st = time.time()
-            pred = model.inference(g, args.batch_size, torch.device(device), feat, args.use_uva)
-            cost_time = time.time() - st
-            func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
-            if args.gpu != -1:
-                print("max memory:", torch.cuda.max_memory_allocated() // 1024 ** 2)
-            print("Origin Inference: {}, inference time: {}".format(func_score, cost_time))
-        print("\n")
+    nd_feat = g.ndata['feat'].numpy()
+    from pathlib import Path
+    dir = Path(f"./mmap/{args.dataset}_{args.reorder}/")
+    dir.mkdir(parents=True, exist_ok=True)
+    mmap_nd = np.memmap(dir / "feat.buf", dtype=np.float32, mode='w+', shape=nd_feat.shape)
+    mmap_nd[:] = nd_feat[:]
+    for nname in ['feat', 'features']:
+        if nname in g.ndata:
+            g.ndata.pop(nname)
+    dgl.save_graphs(str(dir / "graph.bin"), [g])
+    import json
+    json_file = dir / "info.json"
+    json.dump({"num_classes": dataset[1], "shape": mmap_nd.shape}, json_file.open("w"))
 
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
     argparser.add_argument('--reorder', help="use the reordered graph", action="store_true")
-    argparser.add_argument('--use-uva', help="use the pinned memory", action="store_true")
-    argparser.add_argument('--mmap', help="use mmap", action="store_true")
-
-    # Different inference mode. 
-    argparser.add_argument('--topdown', action="store_true")
-    argparser.add_argument('--cpufull', action="store_true")
-    argparser.add_argument('--gpufull', action="store_true")
-    argparser.add_argument('--gpu', help="GPU device ID. Use -1 for CPU training", type=int, default=0)
-    argparser.add_argument('--auto', action="store_true")
-
-    argparser.add_argument('--model', help="can be GCN, GAT, SAGE and JKNET", type=str, default='GCN')
-    argparser.add_argument('--debug', action="store_true")
-    argparser.add_argument('--num-epochs', type=int, default=0)
     argparser.add_argument('--dataset', type=str, default='ogbn-products')
-    argparser.add_argument('--num-hidden', type=int, default=128)
-    argparser.add_argument('--num-heads', type=int, default=-1)
-    argparser.add_argument('--num-layers', type=int, default=2)
-    argparser.add_argument('--batch-size', type=int, default=2000)
     args = argparser.parse_args()
 
     train(args)
