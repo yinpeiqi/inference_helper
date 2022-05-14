@@ -20,6 +20,8 @@ from ogb.nodeproppred import DglNodePropPredDataset
 from dgl.data.utils import load_graphs, save_graphs
 import dgl.backend as backend
 
+from inference_helper.ssd import SSDGraph, SSDBlockSampler
+
 
 class OtherDataset(DGLDataset):
     raw_dir = '../dataset/'
@@ -195,6 +197,12 @@ def setup_seed(seed):
     torch.backends.cudnn.deterministic = True
 
 def load_data(args):
+    if args.ssd:
+        graph = SSDGraph(os.path.join('/realssd/', args.dataset))
+        dim = 100
+        n_classes = 3
+        return (graph, n_classes), dim
+
     if args.dataset == "reddit":
         dataset = load_reddit()
     elif args.dataset in ("friendster", "orkut", "livejournal1"):
@@ -208,7 +216,7 @@ def load_data(args):
 def train(args):
     setup_seed(20)
     dataset, dim = load_data(args)
-    g : dgl.DGLHeteroGraph = dataset[0]
+    g = dataset[0]
 
     if not args.ssd:
         feat = np.random.rand(g.number_of_nodes(), dim)
@@ -216,19 +224,20 @@ def train(args):
     else:
         feat = torch.as_tensor(np.memmap("/realssd/" + args.dataset + "-feat.npy", dtype=np.float32, mode='r+', shape=(g.number_of_nodes(), dim)))
 
-    train_mask = g.ndata['train_mask']
-    labels = g.ndata['label']
+    if not args.ssd:
+        train_mask = g.ndata['train_mask']
+        labels = g.ndata['label']
+        train_nid = torch.nonzero(train_mask, as_tuple=True)[0]
+        sampler = dgl.dataloading.MultiLayerNeighborSampler([10, 25, 50])
+        dataloader = dgl.dataloading.NodeDataLoader(
+            g, train_nid, sampler,
+            batch_size=2000,
+            shuffle=True,
+            drop_last=False,
+            num_workers=4)
     num_classes = dataset[1]
     in_feats = feat.shape[1]
-    train_nid = torch.nonzero(train_mask, as_tuple=True)[0]
     hidden_feature = args.num_hidden
-    sampler = dgl.dataloading.MultiLayerNeighborSampler([10, 25, 50])
-    dataloader = dgl.dataloading.NodeDataLoader(
-        g, train_nid, sampler,
-        batch_size=2000,
-        shuffle=True,
-        drop_last=False,
-        num_workers=4)
     if args.model == "GCN":
         model = StochasticTwoLayerGCN(args.num_layers, in_feats, hidden_feature, num_classes)
     elif args.model == "SAGE":
@@ -248,18 +257,19 @@ def train(args):
     opt = torch.optim.Adam(model.parameters())
     loss_fcn = nn.CrossEntropyLoss()
 
-    for epoch in range(args.num_epochs):
-        for input_nodes, output_nodes, blocks in dataloader:
-            blocks = [b.to(torch.device(device)) for b in blocks]
-            input_features = feat[input_nodes].to(torch.device(device))
-            pred = model(blocks, input_features)
-            output_labels = labels[output_nodes].to(torch.device(device))
-            loss = loss_fcn(pred, output_labels)
-            opt.zero_grad()
-            loss.backward()
-            opt.step()
-            # We do not need to train the network, just to make sure it can run.
-            break
+    if not args.ssd:
+        for epoch in range(args.num_epochs):
+            for input_nodes, output_nodes, blocks in dataloader:
+                blocks = [b.to(torch.device(device)) for b in blocks]
+                input_features = feat[input_nodes].to(torch.device(device))
+                pred = model(blocks, input_features)
+                output_labels = labels[output_nodes].to(torch.device(device))
+                loss = loss_fcn(pred, output_labels)
+                opt.zero_grad()
+                loss.backward()
+                opt.step()
+                # We do not need to train the network, just to make sure it can run.
+                break
 
     with torch.no_grad():
         if args.topdown:

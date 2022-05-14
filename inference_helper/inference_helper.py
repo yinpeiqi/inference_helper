@@ -13,6 +13,7 @@ from .function_generator import FunctionGenerator
 from .data_manager import DataManager
 from .custom_dataloader import CustomDataloader
 from .utils import get_new_arg_input, update_ret_output
+from .ssd import SSDBlockSampler
 
 class InferenceHelperBase():
     def __init__(self, module: nn.Module, device, use_uva = False, debug = False):
@@ -324,7 +325,8 @@ class SSDAutoInferenceHelper(InferenceHelperBase):
         start_max_node = 2000
         start_max_edge = 500000
 
-        sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
+        # sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
+        sampler = SSDBlockSampler()
         dataloader = CustomDataloader(
             graph,
             self.nids,
@@ -338,6 +340,7 @@ class SSDAutoInferenceHelper(InferenceHelperBase):
 
         profiler = Profiler()
         profiler.record_and_reset()
+        start_ts = time.time()
         for input_nodes, output_nodes, blocks in dataloader:
             profiler.tag()
             try:
@@ -377,6 +380,8 @@ class SSDAutoInferenceHelper(InferenceHelperBase):
                 torch.cuda.empty_cache()
                 torch.cuda.reset_peak_memory_stats()
                 profiler.record_and_reset()
+        end_ts = time.time()
+        print('Using time to sample subgraph', end_ts - start_ts)
 
         if self._use_uva:
             self._data_manager.unpin_data_inplace(layer)

@@ -21,7 +21,6 @@ class CustomDataloader(dgl.dataloading.NodeDataLoader):
         device='cpu', shuffle=False, use_uva=False, num_workers=0):
 
         custom_dataset = CustomDataset(start_max_node, start_max_edge, g, nids, prefix_sum_in_degrees)
-        sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
         super().__init__(g,
                          custom_dataset,
                          sampler,
