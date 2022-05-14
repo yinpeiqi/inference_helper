@@ -1,3 +1,4 @@
+import json
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -15,6 +16,7 @@ from inference_helper import InferenceHelper, EdgeControlInferenceHelper, AutoIn
 from dgl.utils import pin_memory_inplace, unpin_memory_inplace, gather_pinned_tensor_rows
 
 import os
+from pathlib import Path
 from dgl.data.dgl_dataset import DGLDataset
 from ogb.nodeproppred import DglNodePropPredDataset
 from dgl.data.utils import load_graphs, save_graphs
@@ -195,6 +197,27 @@ def load_ogb(name, reorder):
     graph.ndata['test_mask'] = test_mask
     return graph, num_labels
 
+def load_data(args):
+    if args.mmap:
+        dir = Path(f"./mmap/{args.dataset}_{args.reorder}/")
+        assert dir.exists()
+        g = dgl.load_graphs(str(dir / "graph.bin"))[0][0]
+        json_file = dir / "info.json"
+        info = json.load(json_file.open("r")) 
+        num_classes = info["num_classes"]
+        shape = info["shape"]
+        mmap_feat = np.memmap(dir / "feat.buf", dtype=np.float32, mode='w+', shape=tuple(shape))
+        g.ndata['feat'] = torch.as_tensor(mmap_feat)
+        return g, num_classes
+    else:
+        if args.dataset == "reddit":
+            dataset = load_reddit()
+        elif args.dataset in ("friendster", "orkut", "livejournal1"):
+            dataset = load_other_dataset(args.dataset, args.num_hidden, args.reorder)
+        else:
+            dataset = load_ogb(args.dataset, args.reorder)
+    return dataset
+
 def setup_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
@@ -202,15 +225,7 @@ def setup_seed(seed):
     random.seed(seed)
     torch.backends.cudnn.deterministic = True
 
-def load_data(args):
-    if args.dataset == "reddit":
-        dataset = load_reddit()
-    elif args.dataset in ("friendster", "orkut", "livejournal1"):
-        dataset = load_other_dataset(args.dataset, args.num_hidden, args.reorder)
-    else:
-        dataset = load_ogb(args.dataset, args.reorder)
-    return dataset
-
+    
 def train(args):
     setup_seed(20)
     dataset = load_data(args)
@@ -346,7 +361,9 @@ if __name__ == '__main__':
     argparser.add_argument('--ssd', help="use ssd", action="store_true")
     argparser.add_argument('--reorder', help="use the reordered graph", action="store_true")
     argparser.add_argument('--use-uva', help="use the pinned memory", action="store_true")
+    argparser.add_argument('--mmap', help="use mmap", action="store_true")
     argparser.add_argument('--free-rate', help="free memory rate", type=float, default=0.9)
+
 
     # Different inference mode. 
     argparser.add_argument('--topdown', action="store_true")
