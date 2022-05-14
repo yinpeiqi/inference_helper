@@ -11,7 +11,7 @@ from exp_model.gcn import StochasticTwoLayerGCN
 from exp_model.sage import SAGE
 from exp_model.gat import  GAT
 from exp_model.jknet import JKNet
-from inference_helper import InferenceHelper, EdgeControlInferenceHelper, AutoInferenceHelper
+from inference_helper import InferenceHelper, EdgeControlInferenceHelper, AutoInferenceHelper, SSDAutoInferenceHelper
 from dgl.utils import pin_memory_inplace, unpin_memory_inplace, gather_pinned_tensor_rows
 
 import os
@@ -67,7 +67,7 @@ class OtherDataset(DGLDataset):
             col = np.array(col)
             graph = dgl.graph((row, col))
             graph = dgl.to_simple(graph)
-            save_graphs(graph_path, self._graph)
+            save_graphs(graph_path, graph)
 
         if self.use_reorder:
             reorder_graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-reorder.bin')
@@ -305,8 +305,11 @@ def train(args):
             print("CPU Inference: {}, inference time: {}".format(func_score, cost_time))
 
         elif args.auto:
-            print(args.num_layers, args.model, "auto", args.dataset, args.num_heads, args.num_hidden)
-            helper = AutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, free_rate=args.free_rate, use_random=not args.reorder, debug = args.debug)
+            print(args.num_layers, args.model, "auto", args.dataset, args.num_heads, args.num_hidden, "reorder" if args.reorder else "", "SSD" if args.ssd else "")
+            if args.ssd:
+                helper = SSDAutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, free_rate=args.free_rate, use_random=not args.reorder, debug = args.debug)
+            else:
+                helper = AutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, free_rate=args.free_rate, use_random=not args.reorder, debug = args.debug)
             helper.ret_shapes = helper._trace_output_shape((feat,))
             torch.cuda.synchronize()
             st = time.time()
@@ -324,9 +327,8 @@ def train(args):
             if args.reorder:
                 nids = torch.arange(g.number_of_nodes()).to(g.device)
             else:
-                nids = torch.arange(g.number_of_nodes()).to(g.device)
+                nids = torch.randperm(g.number_of_nodes()).to(g.device)
             pred = model.inference(g, args.batch_size, torch.device(device), feat, nids, args.use_uva)
-            # pred = model.inference_auto(g, torch.device(device), feat, nids, args.use_uva)
             cost_time = time.time() - st
             func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
             if args.gpu != -1:
@@ -336,6 +338,7 @@ def train(args):
 
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
+    argparser.add_argument('--ssd', help="use ssd", action="store_true")
     argparser.add_argument('--reorder', help="use the reordered graph", action="store_true")
     argparser.add_argument('--use-uva', help="use the pinned memory", action="store_true")
     argparser.add_argument('--free-rate', help="free memory rate", type=float, default=0.9)
@@ -352,8 +355,8 @@ if __name__ == '__main__':
     argparser.add_argument('--num-epochs', type=int, default=0)
     argparser.add_argument('--dataset', type=str, default='ogbn-products')
     argparser.add_argument('--num-hidden', type=int, default=128)
-    argparser.add_argument('--num-heads', type=int, default=-1)
-    argparser.add_argument('--num-layers', type=int, default=2)
+    argparser.add_argument('--num-heads', type=int, default=2)
+    argparser.add_argument('--num-layers', type=int, default=3)
     argparser.add_argument('--batch-size', type=int, default=2000)
     args = argparser.parse_args()
 

@@ -331,7 +331,6 @@ class SSDAutoInferenceHelper(InferenceHelperBase):
         profiler = Profiler()
         profiler.record_and_reset()
         for input_nodes, output_nodes, blocks in dataloader:
-            tot += 1
             profiler.tag()
             try:
                 auto_tuner.reset_state()
