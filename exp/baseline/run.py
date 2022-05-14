@@ -108,10 +108,8 @@ def load_other_dataset(name, dim, reorder):
     st = time.time()
     dataset = OtherDataset(name, use_reorder=reorder)
     graph = dataset[0]
-    features = np.random.rand(graph.number_of_nodes(), dim)
     labels = np.random.randint(0, dataset.num_classes, size=graph.number_of_nodes())
     graph.ndata['train_mask'] = torch.zeros((graph.number_of_nodes(),), dtype=torch.bool)
-    graph.ndata['feat'] = backend.tensor(features, dtype=backend.data_type_dict['float32'])
     graph.ndata['label'] = backend.tensor(labels, dtype=backend.data_type_dict['int64'])
     print(dataset[0])
     print(time.time()-st)
@@ -121,7 +119,6 @@ def load_reddit():
     from dgl.data import RedditDataset
     data = RedditDataset(self_loop=True)
     g = data[0]
-    g.ndata['features'] = g.ndata['feat']
     return g, data.num_classes
 
 class OgbnDataset(DglNodePropPredDataset):
@@ -136,8 +133,6 @@ class OgbnDataset(DglNodePropPredDataset):
 
             if os.path.exists(pre_processed_file_path):
                 self.graph, label_dict = load_graphs(pre_processed_file_path)
-                features = np.random.rand(self.graph[0].number_of_nodes(), 100)
-                self.graph[0].ndata['feat'] = backend.tensor(features, dtype=backend.data_type_dict['float32'])
                 if self.is_hetero:
                     self.labels = label_dict
                 else:
@@ -156,13 +151,11 @@ class OgbnDataset(DglNodePropPredDataset):
                     label_dict = {'labels': self.labels}
 
                 print('Saving...')
-                self.graph.ndata.pop("feat")
+                self.graph.ndata.pop('feat')
                 save_graphs(pre_processed_file_path, self.graph, label_dict)
                 self.graph, _ = load_graphs(pre_processed_file_path)
                 if isinstance(self.graph, list):
                     self.graph = self.graph[0]
-                features = np.random.rand(self.graph.number_of_nodes(), 100)
-                self.graph.ndata['feat'] = backend.tensor(features, dtype=backend.data_type_dict['float32'])
         else:
             super().pre_process()
 
@@ -175,9 +168,8 @@ def load_ogb(name, reorder):
     # graph = dgl.to_bidirected(graph, True)
     graph = dgl.add_self_loop(graph)
     labels = labels[:, 0]
-    graph.ndata['features'] = graph.ndata['feat']
     graph.ndata['label'] = labels
-    in_feats = graph.ndata['features'].shape[1]
+    in_feats = 100
     num_labels = len(torch.unique(labels[torch.logical_not(torch.isnan(labels))]))
     print(graph)
     print("loading data:", time.time()-st)
@@ -207,8 +199,15 @@ def load_data(args):
         dataset = load_reddit()
     elif args.dataset in ("friendster", "orkut", "livejournal1"):
         dataset = load_other_dataset(args.dataset, args.num_hidden, args.reorder)
+        dim = args.num_hidden
     else:
         dataset = load_ogb(args.dataset, args.reorder)
+        dim = 100
+    if not args.ssd:
+        features = np.random.rand(self.graph.number_of_nodes(), dim)
+        self.graph.ndata['feat'] = backend.tensor(features, dtype=backend.data_type_dict['float32'])
+    else:
+        raise Exception
     return dataset
 
 def train(args):
