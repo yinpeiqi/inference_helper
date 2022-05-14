@@ -203,20 +203,20 @@ def load_data(args):
     else:
         dataset = load_ogb(args.dataset, args.reorder)
         dim = 100
-    if not args.ssd:
-        features = np.random.rand(self.graph.number_of_nodes(), dim)
-        self.graph.ndata['feat'] = backend.tensor(features, dtype=backend.data_type_dict['float32'])
-    else:
-        self.graph.ndata['feat'] = np.memmap("/ssd/{args.dataset}-feat.npy", dtype=np.float32, mode='r')
-        print(self.graph.ndata['feat'])
-    return dataset
+    return dataset, dim
 
 def train(args):
     setup_seed(20)
-    dataset = load_data(args)
+    dataset, dim = load_data(args)
     g : dgl.DGLHeteroGraph = dataset[0]
+
+    if not args.ssd:
+        feat = np.random.rand(g.number_of_nodes(), dim)
+        feat = backend.tensor(features, dtype=backend.data_type_dict['float32'])
+    else:
+        feat = torch.as_tensor(np.memmap("/ssd/" + args.dataset + "-feat.npy", dtype=np.float32, mode='r+', shape=(g.number_of_nodes(), dim)))
+
     train_mask = g.ndata['train_mask']
-    feat = g.ndata['feat']
     labels = g.ndata['label']
     num_classes = dataset[1]
     in_feats = feat.shape[1]
