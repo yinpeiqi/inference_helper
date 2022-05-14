@@ -60,6 +60,9 @@ class InferenceHelperBase():
     def after_inference(self):
         pass
 
+    def init_ret(self, shape):
+        return torch.zeros(shape)
+
     def inference(self, inference_graph, *args):
         t0 = time.time()
         self.before_inference(inference_graph, *args)
@@ -84,9 +87,8 @@ class InferenceHelperBase():
             for j, _ in enumerate(layer.outputs):
                 cls, shape = ret_shapes[layer.id][j]
                 if cls == torch.Tensor:
-                    rets.append(
-                        torch.zeros((inference_graph.number_of_nodes(),) + tuple(shape))
-                    )
+                    ret_shape = (inference_graph.number_of_nodes(),) + tuple(shape)
+                    rets.append(self.init_ret(ret_shape))
                 else:
                     rets.append(None)
 
@@ -187,7 +189,7 @@ class AutoInferenceHelper(InferenceHelperBase):
         if not self.use_random:
             self.nids = torch.arange(graph.number_of_nodes()).to(graph.device)
         else:
-            self.nids = torch.arange(graph.number_of_nodes()).to(graph.device)
+            self.nids = torch.randperm(graph.number_of_nodes()).to(graph.device)
         in_degrees = graph.in_degrees(self.nids).numpy()
         prefix_sum_in_degrees = np.cumsum(in_degrees)
         self.prefix_sum_in_degrees = [0]
@@ -279,4 +281,98 @@ class AutoInferenceHelper(InferenceHelperBase):
         print(nodes)
         profiler.show()
         print("maximum memory allocated: ", max_memory)
+        return rets
+
+
+class SSDAutoInferenceHelper(InferenceHelperBase):
+    def __init__(self, module: nn.Module, device, use_uva, free_rate, use_random, debug = False):
+        self.free_rate = free_rate
+        self.use_random = use_random
+        self._feat_count = 0
+        super().__init__(module, device, use_uva, debug)
+
+    def before_inference(self, graph, *args):
+        if not self.use_random:
+            self.nids = torch.arange(graph.number_of_nodes()).to(graph.device)
+        else:
+            self.nids = torch.randperm(graph.number_of_nodes()).to(graph.device)
+        in_degrees = graph.in_degrees(self.nids).numpy()
+        prefix_sum_in_degrees = np.cumsum(in_degrees)
+        self.prefix_sum_in_degrees = [0]
+        self.prefix_sum_in_degrees.extend(prefix_sum_in_degrees.tolist())
+        self.prefix_sum_in_degrees.append(2e18)
+
+    def init_ret(self, shape):
+        self._feat_count += 1
+        return torch.as_tensor(np.memmap(f"/ssd/feat_{self._feat_count}.npy",dtype=np.float32, mode="w+", shape=shape, ))
+
+    def compute(self, graph, rets, layer, func):
+
+        if self._use_uva:
+            self.nids = self.nids.to(self._device)
+            self._data_manager.pin_data_inplace(layer)
+
+        auto_tuner = get_auto_tuner(self._device)
+        start_max_node = 2000
+        start_max_edge = 500000
+
+        sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
+        dataloader = CustomDataloader(
+            graph,
+            self.nids,
+            sampler,
+            start_max_node,
+            start_max_edge,
+            self.prefix_sum_in_degrees,
+            device=self._device,
+            use_uva=self._use_uva,
+            shuffle=False)
+
+        profiler = Profiler()
+        profiler.record_and_reset()
+        for input_nodes, output_nodes, blocks in dataloader:
+            tot += 1
+            profiler.tag()
+            try:
+                auto_tuner.reset_state()
+                torch.cuda.empty_cache()
+                auto_tuner.set_free(self.free_rate)
+
+                profiler.record_name("total input nodes", input_nodes.shape[0])
+
+                new_args = get_new_arg_input(layer.inputs, self._data_manager, input_nodes, 
+                    blocks[0], self._device, self._use_uva)
+                profiler.tag()
+
+                output_vals = func(*new_args)
+                del new_args
+                profiler.tag()
+                if self._debug:
+                    print(blocks[0], "; max memory = ", torch.cuda.max_memory_allocated() // 1024 ** 2, "MB")
+
+                rets = update_ret_output(output_vals, rets, input_nodes, output_nodes, blocks)
+                del output_vals
+                profiler.tag()
+
+                auto_tuner.set_max()
+                nxt_max_node, nxt_max_edge = auto_tuner.search(blocks[0])
+
+            except Exception as e:
+                print(e)
+                profiler.tag()
+                nxt_max_node, nxt_max_edge = auto_tuner.break_peak(blocks[0])
+                dataloader.reset_batch_node(output_nodes.shape[0])
+                gc.collect()
+
+            finally:
+                dataloader.modify_max_node(nxt_max_node)
+                dataloader.modify_max_edge(nxt_max_edge)
+                torch.cuda.empty_cache()
+                torch.cuda.reset_peak_memory_stats()
+                profiler.record_and_reset()
+
+        if self._use_uva:
+            self._data_manager.unpin_data_inplace(layer)
+
+        profiler.show()
         return rets
