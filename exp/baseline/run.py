@@ -5,13 +5,14 @@ import torch.nn.functional as F
 import dgl
 import numpy as np
 import time
+import random
 import tqdm
 import argparse
 from exp_model.gcn import StochasticTwoLayerGCN
 from exp_model.sage import SAGE
 from exp_model.gat import  GAT
 from exp_model.jknet import JKNet
-from inference_helper import InferenceHelper, EdgeControlInferenceHelper, AutoInferenceHelper
+from inference_helper import InferenceHelper, EdgeControlInferenceHelper, AutoInferenceHelper, SSDAutoInferenceHelper
 from dgl.utils import pin_memory_inplace, unpin_memory_inplace, gather_pinned_tensor_rows
 
 import os
@@ -68,7 +69,7 @@ class OtherDataset(DGLDataset):
             col = np.array(col)
             graph = dgl.graph((row, col))
             graph = dgl.to_simple(graph)
-            save_graphs(graph_path, self._graph)
+            save_graphs(graph_path, graph)
 
         if self.use_reorder:
             reorder_graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-reorder.bin')
@@ -160,6 +161,8 @@ class OgbnDataset(DglNodePropPredDataset):
                 self.graph.ndata.pop("feat")
                 save_graphs(pre_processed_file_path, self.graph, label_dict)
                 self.graph, _ = load_graphs(pre_processed_file_path)
+                if isinstance(self.graph, list):
+                    self.graph = self.graph[0]
                 features = np.random.rand(self.graph.number_of_nodes(), 100)
                 self.graph.ndata['feat'] = backend.tensor(features, dtype=backend.data_type_dict['float32'])
         else:
@@ -215,7 +218,16 @@ def load_data(args):
             dataset = load_ogb(args.dataset, args.reorder)
     return dataset
 
+def setup_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+
+    
 def train(args):
+    setup_seed(20)
     dataset = load_data(args)
     g : dgl.DGLHeteroGraph = dataset[0]
     train_mask = g.ndata['train_mask']
@@ -232,7 +244,6 @@ def train(args):
         shuffle=True,
         drop_last=False,
         num_workers=4)
-
     if args.model == "GCN":
         model = StochasticTwoLayerGCN(args.num_layers, in_feats, hidden_feature, num_classes)
     elif args.model == "SAGE":
@@ -267,28 +278,35 @@ def train(args):
 
     with torch.no_grad():
         if args.topdown:
+            for k in list(g.ndata.keys()):
+                g.ndata.pop(k)
+            for k in list(g.edata.keys()):
+                g.edata.pop(k)
             print(args.num_layers, args.model, "TOP DOWN", args.batch_size, args.dataset, args.num_heads, args.num_hidden)
             st = time.time()
-            nids = torch.arange(g.number_of_nodes()).to(g.device)
-            sampler = dgl.dataloading.MultiLayerFullNeighborSampler(args.num_layers)
+            nids = torch.randperm(g.number_of_nodes()).to(g.device)
+            if args.model == "JKNET":
+                sampler = dgl.dataloading.MultiLayerFullNeighborSampler(args.num_layers + 1)
+            else:
+                sampler = dgl.dataloading.MultiLayerFullNeighborSampler(args.num_layers)
             dataloader = dgl.dataloading.NodeDataLoader(
                 g, nids, sampler, batch_size=args.batch_size, 
-                shuffle=True, drop_last=False, use_uva=False, device=device, num_workers=0)
+                shuffle=False, drop_last=False, use_uva=True, device=device, num_workers=0)
             pred = torch.zeros(g.number_of_nodes(), model.out_features)
             pin_memory_inplace(feat)
             t = time.time()
-            for input_nodes, output_nodes, blocks in dataloader:
-                print(blocks)
+            for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
+                # print(blocks)
                 input_features = gather_pinned_tensor_rows(feat, input_nodes)
                 pred[output_nodes] = model(blocks, input_features).cpu()
-                print(time.time()-t)
-                t = time.time()
+                # print(time.time()-t)
+                # t = time.time()
             unpin_memory_inplace(feat)
             cost_time = time.time() - st
             func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
             print("TOP DOWN Inference: {}, inference time: {}".format(func_score, cost_time))
 
-        if args.gpufull:
+        elif args.gpufull:
             print(args.num_layers, args.model, "GPU FULL", args.dataset, args.num_heads, args.num_hidden)
             st = time.time()
             pred = model.forward_full(g.to(device), feat.to(device))
@@ -307,9 +325,14 @@ def train(args):
             print("CPU Inference: {}, inference time: {}".format(func_score, cost_time))
 
         elif args.auto:
-            print(args.num_layers, args.model, "auto", args.dataset, args.num_heads, args.num_hidden)
+            print(args.num_layers, args.model, "auto", args.dataset, args.num_heads, args.num_hidden, "reorder" if args.reorder else "", "SSD" if args.ssd else "")
+            if args.ssd:
+                helper = SSDAutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, free_rate=args.free_rate, use_random=not args.reorder, debug = args.debug)
+            else:
+                helper = AutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, free_rate=args.free_rate, use_random=not args.reorder, debug = args.debug)
+            helper.ret_shapes = helper._trace_output_shape((feat,))
+            torch.cuda.synchronize()
             st = time.time()
-            helper = AutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, debug = args.debug)
             helper_pred = helper.inference(g, feat)
             cost_time = time.time() - st
             helper_score = (torch.argmax(helper_pred, dim=1) == labels).float().sum() / len(helper_pred)
@@ -321,7 +344,11 @@ def train(args):
             else:
                 print(args.num_layers, args.model, "GPU", args.batch_size, args.dataset, args.num_heads, args.num_hidden)
             st = time.time()
-            pred = model.inference(g, args.batch_size, torch.device(device), feat, args.use_uva)
+            if args.reorder:
+                nids = torch.arange(g.number_of_nodes()).to(g.device)
+            else:
+                nids = torch.randperm(g.number_of_nodes()).to(g.device)
+            pred = model.inference(g, args.batch_size, torch.device(device), feat, nids, args.use_uva)
             cost_time = time.time() - st
             func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
             if args.gpu != -1:
@@ -331,9 +358,12 @@ def train(args):
 
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
+    argparser.add_argument('--ssd', help="use ssd", action="store_true")
     argparser.add_argument('--reorder', help="use the reordered graph", action="store_true")
     argparser.add_argument('--use-uva', help="use the pinned memory", action="store_true")
     argparser.add_argument('--mmap', help="use mmap", action="store_true")
+    argparser.add_argument('--free-rate', help="free memory rate", type=float, default=0.9)
+
 
     # Different inference mode. 
     argparser.add_argument('--topdown', action="store_true")
@@ -347,9 +377,14 @@ if __name__ == '__main__':
     argparser.add_argument('--num-epochs', type=int, default=0)
     argparser.add_argument('--dataset', type=str, default='ogbn-products')
     argparser.add_argument('--num-hidden', type=int, default=128)
-    argparser.add_argument('--num-heads', type=int, default=-1)
-    argparser.add_argument('--num-layers', type=int, default=2)
+    argparser.add_argument('--num-heads', type=int, default=2)
+    argparser.add_argument('--num-layers', type=int, default=3)
     argparser.add_argument('--batch-size', type=int, default=2000)
+    argparser.add_argument('--load-data', action="store_true")
     args = argparser.parse_args()
 
-    train(args)
+    if args.load_data:
+        dataset = load_data(args)
+        print(dataset[0])
+    else:
+        train(args)

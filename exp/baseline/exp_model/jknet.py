@@ -27,6 +27,7 @@ class JKNet(nn.Module):
         
         self.n_hidden = hid_dim
         self.n_classes = out_dim
+        self.out_features = out_dim
         self.mode = mode
         self.dropout = nn.Dropout(dropout)
         self.layers = nn.ModuleList()
@@ -54,6 +55,16 @@ class JKNet(nn.Module):
 
     def forward(self, g, feats):
         feat_lst = []
+        for i, layer in enumerate(self.layers):
+            feats = self.dropout(layer(g[i], feats))
+            feat_lst.append(feats[:g[-1].num_src_nodes()])
+        jumped = self.jump(feat_lst)
+        agged = self.agge(g[-1], jumped)
+
+        return self.output(agged)
+
+    def forward_full(self, g, feats):
+        feat_lst = []
         for layer in self.layers:
             feats = self.dropout(layer(g, feats))
             feat_lst.append(feats)
@@ -63,7 +74,7 @@ class JKNet(nn.Module):
 
         return self.output(agged)
 
-    def inference(self, g, batch_size, device, x, use_uva):
+    def inference(self, g, batch_size, device, x, nids, use_uva):
         for k in list(g.ndata.keys()):
             g.ndata.pop(k)
         for k in list(g.edata.keys()):
@@ -73,7 +84,6 @@ class JKNet(nn.Module):
         for l, layer in enumerate(self.layers):
             feat_lst.append(torch.zeros(g.num_nodes(), self.n_hidden))
 
-            nids = torch.arange(g.num_nodes()).to(g.device)
             if use_uva:
                 pin_memory_inplace(x)
                 nids.to(device)
@@ -119,7 +129,7 @@ class JKNet(nn.Module):
             x = feat_lst[-1]
 
         y = torch.zeros(g.num_nodes(), self.n_classes)
-        nids = torch.arange(g.num_nodes()).to(g.device)
+
         if use_uva:
             for feat in feat_lst:
                 pin_memory_inplace(feat)
