@@ -313,6 +313,7 @@ def train(args):
             print(args.num_layers, args.model, "auto", args.dataset, args.num_heads, args.num_hidden, "reorder" if args.reorder else "", "SSD" if args.ssd else "")
             if args.ssd:
                 helper = SSDAutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, free_rate=args.free_rate, use_random=not args.reorder, debug = args.debug)
+                helper.dataset_name = args.dataset
             else:
                 helper = AutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, free_rate=args.free_rate, use_random=not args.reorder, debug = args.debug)
             helper.ret_shapes = helper._trace_output_shape((feat,))

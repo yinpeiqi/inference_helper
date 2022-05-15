@@ -301,7 +301,7 @@ class SSDAutoInferenceHelper(InferenceHelperBase):
             self.nids = torch.arange(graph.number_of_nodes()).to(graph.device)
         else:
             self.nids = torch.randperm(graph.number_of_nodes()).to(graph.device)
-        in_degrees = graph.in_degrees(self.nids).numpy()
+        in_degrees = np.load(f"/realssd/{self.dataset_name}/in_degrees.npy")
         prefix_sum_in_degrees = np.cumsum(in_degrees)
         self.prefix_sum_in_degrees = [0]
         self.prefix_sum_in_degrees.extend(prefix_sum_in_degrees.tolist())
