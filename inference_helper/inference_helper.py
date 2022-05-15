@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import tqdm
+import os
 import gc
 import time
 
@@ -28,7 +29,10 @@ class InferenceHelperBase():
     def _trace_output_shape(self, args):
         first_layer_inputs = (dgl.graph(([0], [0]), device=self._device),)
         for arg in tuple(args):
-            first_layer_inputs += (arg[[0]].to(self._device),)
+            if arg is None:
+                first_layer_inputs += (arg,)
+            else:
+                first_layer_inputs += (arg[[0]].to(self._device),)
         arg2val_map = {}
         for val, arg_name in zip(first_layer_inputs, self._schema.first_layer_input):
             arg_node = self._schema.name2arg_map[arg_name]
@@ -60,8 +64,11 @@ class InferenceHelperBase():
     def after_inference(self):
         pass
 
-    def init_ret(self, shape):
+    def init_ret(self, arg_node, shape):
         return torch.zeros(shape)
+
+    def clear_ret(self, arg_node):
+        del self._data_manager[arg_node]
 
     def inference(self, inference_graph, *args):
         t0 = time.time()
@@ -84,15 +91,14 @@ class InferenceHelperBase():
         for layer, func in zip(self._schema.layers, self._funcs):
 
             rets = []
-            for j, _ in enumerate(layer.outputs):
+            for j, arg_node in enumerate(layer.outputs):
                 cls, shape = ret_shapes[layer.id][j]
                 if cls == torch.Tensor:
                     ret_shape = (inference_graph.number_of_nodes(),) + tuple(shape)
-                    rets.append(self.init_ret(ret_shape))
+                    ret = self.init_ret(arg_node, ret_shape)
                 else:
-                    rets.append(None)
-
-            for ret, arg_node in zip(rets, layer.outputs):
+                    ret = None
+                rets.append(ret)
                 self._data_manager[arg_node] = ret
 
             gc.collect()
@@ -103,7 +109,7 @@ class InferenceHelperBase():
             # delete intermediate val
             for arg_node in layer.inputs:
                 if arg_node.input_layers[-1] == layer and arg_node.input_layers[0] != self._schema.get_layer(0):
-                    del self._data_manager[arg_node]
+                    self.clear_ret(arg_node)
 
         outputs = ()
         for name in self._schema.last_layer_output:
@@ -288,7 +294,6 @@ class SSDAutoInferenceHelper(InferenceHelperBase):
     def __init__(self, module: nn.Module, device, use_uva, free_rate, use_random, debug = False):
         self.free_rate = free_rate
         self.use_random = use_random
-        self._feat_count = 0
         super().__init__(module, device, use_uva, debug)
 
     def before_inference(self, graph, *args):
@@ -302,9 +307,12 @@ class SSDAutoInferenceHelper(InferenceHelperBase):
         self.prefix_sum_in_degrees.extend(prefix_sum_in_degrees.tolist())
         self.prefix_sum_in_degrees.append(2e18)
 
-    def init_ret(self, shape):
-        self._feat_count += 1
-        return torch.as_tensor(np.memmap(f"/ssd/feat_{self._feat_count}.npy",dtype=np.float32, mode="w+", shape=shape, ))
+    def init_ret(self, arg_node, shape):
+        return torch.as_tensor(np.memmap(f"/ssd/feat_{arg_node.name}.npy",dtype=np.float32, mode="w+", shape=shape, ))
+
+    def clear_ret(self, arg_node):
+        del self._data_manager[arg_node]
+        os.remove(f"/ssd/feat_{arg_node.name}.npy")
 
     def compute(self, graph, rets, layer, func):
 
