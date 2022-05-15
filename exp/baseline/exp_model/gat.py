@@ -68,7 +68,7 @@ class GAT(nn.Module):
         logits = self.gat_layers[-1](g, h).mean(1)
         return logits
 
-    def inference(self, g, batch_size, device, x, nids, use_uva = False):
+    def inference(self, g, batch_size, device, x, nids, use_uva = False, use_ssd = False):
         for k in list(g.ndata.keys()):
             g.ndata.pop(k)
         for k in list(g.edata.keys()):
@@ -79,9 +79,15 @@ class GAT(nn.Module):
             gc.collect()
             th.cuda.empty_cache()
             if l != self.num_layers - 1:
-                y = th.zeros(g.number_of_nodes(), self.heads[l] * self.hidden_features)
+                if use_ssd:
+                    y = torch.as_tensor(np.memmap(f"/ssd/feat_{l}.npy",dtype=np.float32, mode="w+", shape=(g.number_of_nodes(), self.heads[l] * self.hidden_features), ))
+                else:
+                    y = th.zeros(g.number_of_nodes(), self.heads[l] * self.hidden_features)
             else:
-                y = th.zeros(g.number_of_nodes(), self.out_features)
+                if use_ssd:
+                    y = torch.as_tensor(np.memmap(f"/ssd/feat_{l}.npy",dtype=np.float32, mode="w+", shape=(g.number_of_nodes(), self.out_features), ))
+                else:
+                    y = th.zeros(g.number_of_nodes(), self.out_features)
 
             if use_uva:
                 pin_memory_inplace(x)

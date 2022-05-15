@@ -5,6 +5,7 @@ import dgl
 import dgl.function as fn
 from dgl.nn import GraphConv, JumpingKnowledge
 import tqdm
+import numpy as np
 from dgl.utils import pin_memory_inplace, unpin_memory_inplace, gather_pinned_tensor_rows
 from inference_helper.profiler import Profiler
 from inference_helper.utils import update_out_in_chunks
@@ -74,7 +75,7 @@ class JKNet(nn.Module):
 
         return self.output(agged)
 
-    def inference(self, g, batch_size, device, x, nids, use_uva):
+    def inference(self, g, batch_size, device, x, nids, use_uva = False, use_ssd = False):
         for k in list(g.ndata.keys()):
             g.ndata.pop(k)
         for k in list(g.edata.keys()):
@@ -82,7 +83,13 @@ class JKNet(nn.Module):
 
         feat_lst = []
         for l, layer in enumerate(self.layers):
-            feat_lst.append(torch.zeros(g.num_nodes(), self.n_hidden))
+            
+            shape = (g.num_nodes(), self.n_hidden)
+            if use_ssd:
+                y = torch.as_tensor(np.memmap(f"/ssd/feat_{l}.npy",dtype=np.float32, mode="w+", shape=shape, ))
+            else:
+                y = torch.zeros(*shape)
+            feat_lst.append(y)
 
             if use_uva:
                 pin_memory_inplace(x)
@@ -100,7 +107,13 @@ class JKNet(nn.Module):
 
             profiler = Profiler()
             profiler.record_and_reset()
+            tot = 0
+            memorys = []
+            max_memory = 0
+            nodes = []
             for input_nodes, output_nodes, blocks in dataloader:
+                nodes.append(output_nodes.shape[0])
+                tot += 1
                 torch.cuda.empty_cache()
                 profiler.record_name("total input nodes", input_nodes.shape[0])
                 profiler.tag()
@@ -120,15 +133,25 @@ class JKNet(nn.Module):
                 update_out_in_chunks(feat_lst[-1], output_nodes, h)
                 profiler.tag()
 
+                memorys.append(torch.cuda.max_memory_allocated() // 1024 ** 2)
+                torch.cuda.reset_peak_memory_stats()
+
                 torch.cuda.empty_cache()
                 profiler.record_and_reset()
-
+            print(tot)
+            print(memorys)
+            print(nodes)
+            print("max:", max(memorys))
             profiler.show()
             if use_uva:
                 unpin_memory_inplace(x)
             x = feat_lst[-1]
 
-        y = torch.zeros(g.num_nodes(), self.n_classes)
+        shape = (g.num_nodes(), self.n_classes)
+        if use_ssd:
+            y = torch.as_tensor(np.memmap(f"/ssd/feat_99.npy",dtype=np.float32, mode="w+", shape=shape, ))
+        else:
+            y = torch.zeros(*shape)
 
         if use_uva:
             for feat in feat_lst:
@@ -147,7 +170,13 @@ class JKNet(nn.Module):
 
         profiler = Profiler()
         profiler.record_and_reset()
+        tot = 0
+        memorys = []
+        max_memory = 0
+        nodes = []
         for input_nodes, output_nodes, blocks in dataloader:
+            nodes.append(output_nodes.shape[0])
+            tot += 1
             torch.cuda.empty_cache()
             profiler.record_name("total input nodes", input_nodes.shape[0])
             profiler.tag()
@@ -170,10 +199,16 @@ class JKNet(nn.Module):
             update_out_in_chunks(y, output_nodes, output)
             profiler.tag()
 
+            memorys.append(torch.cuda.max_memory_allocated() // 1024 ** 2)
+            torch.cuda.reset_peak_memory_stats()
             torch.cuda.empty_cache()
             profiler.record_and_reset()
 
         profiler.show()
+        print(tot)
+        print(memorys)
+        print(nodes)
+        print("max:", max(memorys))
         if use_uva:
             for feat in feat_lst:
                 unpin_memory_inplace(feat)

@@ -333,7 +333,7 @@ def train(args):
                 nids = torch.arange(g.number_of_nodes()).to(g.device)
             else:
                 nids = torch.randperm(g.number_of_nodes()).to(g.device)
-            pred = model.inference(g, args.batch_size, torch.device(device), feat, nids, args.use_uva)
+            pred = model.inference(g, args.batch_size, torch.device(device), feat, nids, args.use_uva, args.ssd)
             cost_time = time.time() - st
             func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
             if args.gpu != -1:

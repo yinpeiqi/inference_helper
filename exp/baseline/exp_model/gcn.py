@@ -3,6 +3,7 @@ import dgl
 import torch.nn as nn
 import torch.nn.functional as F
 import tqdm
+import numpy as np
 from inference_helper.profiler import Profiler
 from dgl.utils import pin_memory_inplace, unpin_memory_inplace, gather_pinned_tensor_rows
 from inference_helper.utils import update_out_in_chunks
@@ -34,7 +35,7 @@ class StochasticTwoLayerGCN(nn.Module):
             x = F.relu(conv(blocks, (x, x_dst)))
         return x
 
-    def inference(self, g, batch_size, device, x, nids, use_uva = False):
+    def inference(self, g, batch_size, device, x, nids, use_uva = False, use_ssd = False):
         if use_uva:
             for k in list(g.ndata.keys()):
                 g.ndata.pop(k)
@@ -46,10 +47,14 @@ class StochasticTwoLayerGCN(nn.Module):
         """
         # Compute representations layer by layer
         for l, layer in enumerate(self.convs):
-            y = torch.zeros(g.number_of_nodes(),
+            shape = (g.number_of_nodes(),
                             self.hidden_features
                             if l != self.n_layers - 1
                             else self.out_features)
+            if use_ssd:
+                y = torch.as_tensor(np.memmap(f"/ssd/feat_{l}.npy",dtype=np.float32, mode="w+", shape=shape, ))
+            else:
+                y = torch.zeros(*shape)
 
             memorys = []
             nodes = []
