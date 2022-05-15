@@ -308,11 +308,11 @@ class SSDAutoInferenceHelper(InferenceHelperBase):
         self.prefix_sum_in_degrees.append(2e18)
 
     def init_ret(self, arg_node, shape):
-        return torch.as_tensor(np.memmap(f"/ssd/feat_{arg_node.name}.npy",dtype=np.float32, mode="w+", shape=shape, ))
+        return torch.as_tensor(np.memmap(f"/realssd/feat_{arg_node.name}.npy",dtype=np.float32, mode="w+", shape=shape, ))
 
     def clear_ret(self, arg_node):
         del self._data_manager[arg_node]
-        os.remove(f"/ssd/feat_{arg_node.name}.npy")
+        os.remove(f"/realssd/feat_{arg_node.name}.npy")
 
     def compute(self, graph, rets, layer, func):
 

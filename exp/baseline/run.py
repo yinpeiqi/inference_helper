@@ -214,7 +214,7 @@ def train(args):
         feat = np.random.rand(g.number_of_nodes(), dim)
         feat = backend.tensor(feat, dtype=backend.data_type_dict['float32'])
     else:
-        feat = torch.as_tensor(np.memmap("/ssd/" + args.dataset + "-feat.npy", dtype=np.float32, mode='r+', shape=(g.number_of_nodes(), dim)))
+        feat = torch.as_tensor(np.memmap("/realssd/" + args.dataset + "-feat.npy", dtype=np.float32, mode='r+', shape=(g.number_of_nodes(), dim)))
 
     train_mask = g.ndata['train_mask']
     labels = g.ndata['label']
@@ -322,6 +322,12 @@ def train(args):
             cost_time = time.time() - st
             helper_score = (torch.argmax(helper_pred, dim=1) == labels).float().sum() / len(helper_pred)
             print("Helper Inference: {}, inference time: {}".format(helper_score, cost_time))
+            if os.path.exist("/realssd/feat_output.npy"):
+                os.remove("/realssd/feat_output.npy")
+            if os.path.exist("/realssd/feat_relu_2.npy"):
+                os.remove("/realssd/feat_relu_2.npy")
+            if os.path.exist("/realssd/feat_mean.npy"):
+                os.remove("/realssd/feat_mean.npy")
 
         else:
             if args.gpu == -1:
@@ -367,7 +373,8 @@ if __name__ == '__main__':
     args = argparser.parse_args()
 
     if args.load_data:
-        dataset = load_data(args)
-        print(dataset[0])
+        g, n_classes = load_data(args)
+        print(g)
+        
     else:
         train(args)
