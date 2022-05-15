@@ -322,11 +322,11 @@ def train(args):
             cost_time = time.time() - st
             helper_score = (torch.argmax(helper_pred, dim=1) == labels).float().sum() / len(helper_pred)
             print("Helper Inference: {}, inference time: {}".format(helper_score, cost_time))
-            if os.path.exist("/realssd/feat_output.npy"):
+            if os.path.exists("/realssd/feat_output.npy"):
                 os.remove("/realssd/feat_output.npy")
-            if os.path.exist("/realssd/feat_relu_2.npy"):
+            if os.path.exists("/realssd/feat_relu_2.npy"):
                 os.remove("/realssd/feat_relu_2.npy")
-            if os.path.exist("/realssd/feat_mean.npy"):
+            if os.path.exists("/realssd/feat_mean.npy"):
                 os.remove("/realssd/feat_mean.npy")
 
         else:
