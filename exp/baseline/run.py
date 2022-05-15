@@ -212,7 +212,7 @@ def train(args):
 
     if not args.ssd:
         feat = np.random.rand(g.number_of_nodes(), dim)
-        feat = backend.tensor(features, dtype=backend.data_type_dict['float32'])
+        feat = backend.tensor(feat, dtype=backend.data_type_dict['float32'])
     else:
         feat = torch.as_tensor(np.memmap("/ssd/" + args.dataset + "-feat.npy", dtype=np.float32, mode='r+', shape=(g.number_of_nodes(), dim)))
 
