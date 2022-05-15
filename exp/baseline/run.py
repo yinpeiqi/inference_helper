@@ -43,8 +43,10 @@ class OtherDataset(DGLDataset):
                                                 verbose=verbose)
 
     def process(self):
+        reorder_bigraph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-bi-reorder.bin')
+        bigraph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-bi.bin')
         graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '.bin')
-        if not os.path.exists(graph_path):
+        if not os.path.exists(graph_path) and not os.path.exists(bigraph_path) and not os.path.exists(reorder_bigraph_path):
             row = []
             col = []
             cur_node = 0
@@ -71,7 +73,6 @@ class OtherDataset(DGLDataset):
 
         if self.use_reorder:
             reorder_graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-reorder.bin')
-            reorder_bigraph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-bi-reorder.bin')
             if not os.path.exists(reorder_graph_path) and not os.path.exists(reorder_bigraph_path):
                 graphs, _ = load_graphs(graph_path)
                 t1 = time.time()
@@ -88,7 +89,6 @@ class OtherDataset(DGLDataset):
                 self._graph, _ = load_graphs(reorder_bigraph_path)
                 self._graph = self._graph[0]
         else:
-            bigraph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-bi.bin')
             if not os.path.exists(bigraph_path):
                 graphs, _ = load_graphs(graph_path)
                 self._graph = dgl.to_bidirected(graphs[0])
