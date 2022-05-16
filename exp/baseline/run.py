@@ -235,6 +235,10 @@ def train(args):
             shuffle=True,
             drop_last=False,
             num_workers=4)
+    else:
+        labels = np.random.randint(0, dataset[1], size=g.number_of_nodes())
+        labels = backend.tensor(labels, dtype=backend.data_type_dict['int64'])
+    
     num_classes = dataset[1]
     in_feats = feat.shape[1]
     hidden_feature = args.num_hidden

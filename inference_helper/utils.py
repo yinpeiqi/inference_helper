@@ -3,6 +3,7 @@ from torch.fx import Node
 import torch
 from dgl import DGLHeteroGraph
 from dgl.utils import gather_pinned_tensor_rows
+from .ssd import SSDGraph
 
 def arg_trace(a):
     ret = set()
@@ -29,7 +30,7 @@ def get_new_arg_input(inputs, data_map, input_nodes, inference_graph, device, us
                 new_args += (gather_pinned_tensor_rows(data_map[arg_node], input_nodes),)
             else:
                 new_args += (data_map[arg_node][input_nodes].to(device),)
-        elif isinstance(data_map[arg_node], DGLHeteroGraph):
+        elif isinstance(data_map[arg_node], DGLHeteroGraph) or isinstance(data_map[arg_node], SSDGraph):
             new_args += (inference_graph.to(device),)
         elif hasattr(data_map[arg_node], "to"):
             new_args += (data_map[arg_node].to(device),)
