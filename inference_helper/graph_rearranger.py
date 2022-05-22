@@ -1,4 +1,5 @@
 from torch.fx import GraphModule
+import operator
 
 from .dglfx.node_relation import get_node_relation
 from .graph_replicator import GraphReplicator
@@ -79,7 +80,7 @@ class GraphRearranger():
             e = start_e
             message_layer = e.src.message_degree
             while True:
-                if len(e.src.out_edges) != 1 or e.dst.is_message or not e.dst.changable:
+                if (e.dst.node.target != operator.getitem and len(e.src.out_edges) != 1) or e.dst.is_message or not e.dst.changable:
                     break
                 if len(e.dst.in_edges) != 1:
                     is_same_source = True
