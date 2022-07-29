@@ -72,7 +72,7 @@ class OtherDataset(DGLDataset):
             graph = dgl.graph((row, col))
             graph = dgl.to_simple(graph)
             save_graphs(graph_path, graph)
-
+        
         if self.use_reorder:
             reorder_graph_path = os.path.join(OtherDataset.raw_dir, self.dataset_name + '-reorder.bin')
             if not os.path.exists(reorder_graph_path) and not os.path.exists(reorder_bigraph_path):
@@ -81,23 +81,27 @@ class OtherDataset(DGLDataset):
                 print("Reordering the graph...")
                 self._graph = dgl.reorder_graph(graphs[0], node_permute_algo='rcmk', edge_permute_algo='src')
                 print("Reorder is done, cost ", time.time()-t1)
-                save_graphs(reorder_graph_path, [self._graph])
+                save_graphs(reorder_graph_path, self._graph)
             
-            if not os.path.exists(reorder_bigraph_path):
-                graphs, _ = load_graphs(reorder_graph_path)
-                self._graph = dgl.to_bidirected(graphs[0])
-                save_graphs(reorder_bigraph_path, [self._graph])
-            else:
-                self._graph, _ = load_graphs(reorder_bigraph_path)
-                self._graph = self._graph[0]
+            self._graph, _ = load_graphs(reorder_graph_path)
+            self._graph = self._graph[0]
+            # if not os.path.exists(reorder_bigraph_path):
+            #     graphs, _ = load_graphs(reorder_graph_path)
+            #     self._graph = dgl.to_bidirected(graphs[0])
+            #     save_graphs(reorder_bigraph_path, [self._graph])
+            # else:
+            #     self._graph, _ = load_graphs(reorder_bigraph_path)
+            #     self._graph = self._graph[0]
         else:
-            if not os.path.exists(bigraph_path):
-                graphs, _ = load_graphs(graph_path)
-                self._graph = dgl.to_bidirected(graphs[0])
-                save_graphs(bigraph_path, [self._graph])
-            else:
-                self._graph, _ = load_graphs(bigraph_path)  
-                self._graph = self._graph[0]          
+            self._graph, _ = load_graphs(graph_path)  
+            self._graph = self._graph[0]    
+            # if not os.path.exists(bigraph_path):
+            #     graphs, _ = load_graphs(graph_path)
+            #     self._graph = dgl.to_bidirected(graphs[0])
+            #     save_graphs(bigraph_path, [self._graph])
+            # else:
+            #     self._graph, _ = load_graphs(bigraph_path)  
+            #     self._graph = self._graph[0]          
 
     def __getitem__(self, idx):
         assert idx == 0, "This dataset only has one graph"
@@ -115,6 +119,8 @@ def load_other_dataset(name, dim, reorder):
     graph.ndata['label'] = backend.tensor(labels, dtype=backend.data_type_dict['int64'])
     print(dataset[0])
     print(time.time()-st)
+    if name in ("orkut", "livejournal1"):
+        graph = dgl.add_self_loop(graph)
     return graph, dataset.num_classes
 
 def load_reddit():
@@ -205,6 +211,7 @@ def load_data(args):
 
     if args.dataset == "reddit":
         dataset = load_reddit()
+        dim = 602
     elif args.dataset in ("friendster", "orkut", "livejournal1"):
         dataset = load_other_dataset(args.dataset, args.num_hidden, args.reorder)
         dim = args.num_hidden
@@ -329,7 +336,7 @@ def train(args):
                 helper = SSDAutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, free_rate=args.free_rate, use_random=not args.reorder, debug = args.debug)
                 helper.dataset_name = args.dataset
             else:
-                helper = AutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, free_rate=args.free_rate, use_random=not args.reorder, debug = args.debug)
+                helper = AutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, free_rate=args.free_rate, use_random=not args.reorder, ratio = args.ratio, debug = args.debug)
             helper.ret_shapes = helper._trace_output_shape((feat,))
             torch.cuda.synchronize()
             st = time.time()
@@ -368,6 +375,7 @@ if __name__ == '__main__':
     argparser.add_argument('--reorder', help="use the reordered graph", action="store_true")
     argparser.add_argument('--use-uva', help="use the pinned memory", action="store_true")
     argparser.add_argument('--free-rate', help="free memory rate", type=float, default=0.9)
+    argparser.add_argument('--ratio', help="", type=float, default=None)
 
     # Different inference mode. 
     argparser.add_argument('--topdown', action="store_true")
