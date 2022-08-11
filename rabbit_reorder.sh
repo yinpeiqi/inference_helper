@@ -22,6 +22,14 @@ make
 for dataset in ogbn-products ; do
     path=~/inference_helper/rabbit/$dataset-rabbit-order.txt
     if [ ! -f "$path" ]; then
-        reorder ~/inference_helper/rabbit/$dataset-edge-list.txt >> $path
+        ./reorder ~/inference_helper/rabbit/$dataset-edge-list.txt >> $path
+    fi
+done
+
+cd ../../../
+for dataset in ogbn-products ; do
+    path=~/inference_helper/rabbit/$dataset.npy
+    if [ ! -f "$path" ]; then
+        python -u exp/baseline/data_processing.py --dataset $dataset --action save --path ~/inference_helper/rabbit/$dataset
     fi
 done

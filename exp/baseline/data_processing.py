@@ -197,6 +197,15 @@ def train(args):
         g = dataset[0]
         to_edge_list(g)
 
+    elif args.action == "save":
+        res = []
+        f = open(args.path + "-rabbit-order.txt", "r")
+        for line in f:
+            l = int(line)
+            res.append(l)
+        ss = np.array(res)
+        np.save(args.path + ".npy", ss)
+
 def to_edge_list(g):
     src, dst = g.adj_sparse("coo")
     src = src.numpy().tolist()
@@ -209,6 +218,7 @@ if __name__ == '__main__':
     argparser.add_argument('--debug', action="store_true")
     argparser.add_argument('--dataset', type=str, default='ogbn-products')
     argparser.add_argument('--action', type=str, default='to')
+    argparser.add_argument('--path', type=str, default='')
 
     args = argparser.parse_args()
 
