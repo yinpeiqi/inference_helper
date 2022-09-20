@@ -187,39 +187,34 @@ class EdgeControlInferenceHelper(InferenceHelperBase):
 
 
 class AutoInferenceHelper(InferenceHelperBase):
-    def __init__(self, module: nn.Module, device, use_uva, free_rate, use_random, ratio=None, debug = False):
+    def __init__(self, module: nn.Module, device, use_uva, free_rate, nids, ratio=None, fan_out=None, debug = False):
         self.free_rate = free_rate
-        self.use_random = use_random
+        self.nids = nids
         self.ratio = ratio
+        self.fan_out = fan_out
         super().__init__(module, device, use_uva, debug)
 
     def before_inference(self, graph, *args):
-        if not self.use_random:
-            self.nids = torch.arange(graph.number_of_nodes())
-        else:
-            self.nids = torch.randperm(graph.number_of_nodes())
         if self.ratio:
             st = time.time()
             self.targets = [self.nids[:int(graph.number_of_nodes() * self.ratio)]]
             for i in range(len(self._schema.layers) - 1):
                 in_e = graph.in_edges(self.targets[0])[0]
-                tt = time.time()
                 in_neighbors = torch.unique(in_e)
-                print(time.time()-tt)
-                print(in_neighbors, in_neighbors.shape)
                 self.targets = [in_neighbors] + self.targets
-            for tar in self.targets:
-                print(tar.shape)
-            print("BFS get neighbors:", time.time()-st)
         in_degrees = graph.in_degrees(self.nids).numpy()
-        if not self.ratio:
-            self.in_degrees = in_degrees
-            prefix_sum_in_degrees = np.cumsum(in_degrees)
-            self.prefix_sum_in_degrees = [0]
-            self.prefix_sum_in_degrees.extend(prefix_sum_in_degrees.tolist())
-            self.prefix_sum_in_degrees.append(2e18)
+        self.in_degrees = in_degrees
+        prefix_sum_in_degrees = np.cumsum(in_degrees)
+        self.prefix_sum_in_degrees = [0]
+        self.prefix_sum_in_degrees.extend(prefix_sum_in_degrees.tolist())
+        self.prefix_sum_in_degrees.append(2e18)
 
     def compute(self, graph, rets, layer, func):
+        if self._use_uva:
+            self._data_manager.pin_data_inplace(layer)
+            if not self.ratio:
+                self.nids = self.nids.to(self._device)
+
         if self.ratio:
             self.nids = self.targets[layer.id]
             in_degrees = self.in_degrees[self.nids]
@@ -227,17 +222,15 @@ class AutoInferenceHelper(InferenceHelperBase):
             self.prefix_sum_in_degrees = [0]
             self.prefix_sum_in_degrees.extend(prefix_sum_in_degrees.tolist())
             self.prefix_sum_in_degrees.append(2e18)
-            print(self.nids, graph)
-
-        if self._use_uva:
-            self.nids = self.nids.to(self._device)
-            self._data_manager.pin_data_inplace(layer)
 
         auto_tuner = get_auto_tuner(self._device)
         start_max_node = 2000
         start_max_edge = 500000
 
-        sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
+        if self.fan_out is not None:
+            sampler = dgl.dataloading.NeighborSampler([self.fan_out[layer.id]])
+        else:
+            sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
         dataloader = CustomDataloader(
             graph,
             self.nids,

@@ -11,8 +11,7 @@ from exp_model.gcn import StochasticTwoLayerGCN
 from exp_model.sage import SAGE
 from exp_model.gat import  GAT
 from exp_model.jknet import JKNet
-from inference_helper import InferenceHelper, EdgeControlInferenceHelper, AutoInferenceHelper
-from dgl.utils import pin_memory_inplace, unpin_memory_inplace, gather_pinned_tensor_rows
+from inference_helper import SSDAutoInferenceHelper
 
 import os
 from dgl.data.dgl_dataset import DGLDataset
@@ -20,7 +19,7 @@ from ogb.nodeproppred import DglNodePropPredDataset
 from dgl.data.utils import load_graphs, save_graphs
 import dgl.backend as backend
 
-from inference_helper.profiler import Profiler
+from inference_helper.ssd import SSDGraph
 
 class OtherDataset(DGLDataset):
     raw_dir = '../dataset/'
@@ -202,35 +201,20 @@ def setup_seed(seed):
     torch.backends.cudnn.deterministic = True
 
 def load_data(args):
-    if args.dataset == "reddit":
-        dataset = load_reddit()
-        dim = 602
-    elif args.dataset in ("friendster", "orkut", "livejournal1"):
-        dataset = load_other_dataset(args.dataset, args.num_hidden, args.reorder)
-        dim = args.num_hidden
-    else:
-        dataset = load_ogb(args.dataset, args.reorder)
-        dim = 100
-    return dataset, dim
+    graph = SSDGraph(os.path.join('/realssd/', args.dataset))
+    dim = 100
+    n_classes = 3
+    return (graph, n_classes), dim
 
 def train(args):
     setup_seed(20)
     dataset, dim = load_data(args)
     g = dataset[0]
 
-    feat = np.random.rand(g.number_of_nodes(), dim)
-    feat = backend.tensor(feat, dtype=backend.data_type_dict['float32'])
+    feat = torch.as_tensor(np.memmap("/realssd/" + args.dataset + "-feat.npy", dtype=np.float32, mode='r+', shape=(g.number_of_nodes(), dim)))
 
-    train_mask = g.ndata['train_mask']
-    labels = g.ndata['label']
-    train_nid = torch.nonzero(train_mask, as_tuple=True)[0]
-    sampler = dgl.dataloading.MultiLayerNeighborSampler([10, 25, 50])
-    dataloader = dgl.dataloading.NodeDataLoader(
-        g, train_nid, sampler,
-        batch_size=2000,
-        shuffle=True,
-        drop_last=False,
-        num_workers=4)
+    labels = np.random.randint(0, dataset[1], size=g.number_of_nodes())
+    labels = backend.tensor(labels, dtype=backend.data_type_dict['int64'])
 
     num_classes = dataset[1]
     in_feats = feat.shape[1]
@@ -254,93 +238,23 @@ def train(args):
     opt = torch.optim.Adam(model.parameters())
     loss_fcn = nn.CrossEntropyLoss()
 
-    for epoch in range(args.num_epochs):
-        for input_nodes, output_nodes, blocks in dataloader:
-            blocks = [b.to(torch.device(device)) for b in blocks]
-            input_features = feat[input_nodes].to(torch.device(device))
-            pred = model(blocks, input_features)
-            output_labels = labels[output_nodes].to(torch.device(device))
-            loss = loss_fcn(pred, output_labels)
-            opt.zero_grad()
-            loss.backward()
-            opt.step()
-            # We do not need to train the network, just to make sure it can run.
-            break
-
     with torch.no_grad():
+        if args.rabbit and args.reorder:
+            print("rabbit")
         if args.ratio:
             print("Ratio:", args.ratio)
-        # if args.l:
-        #     print("fan out:", args.l)
-        if args.topdown:
-            for k in list(g.ndata.keys()):
-                g.ndata.pop(k)
-            for k in list(g.edata.keys()):
-                g.edata.pop(k)
-            print(args.num_layers, args.model, "TOP DOWN", args.batch_size, args.dataset, args.num_heads, args.num_hidden)
-            st = time.time()
-            nids = torch.randperm(g.number_of_nodes()).to(g.device)
-            if args.ratio:
-                nids = nids[:int(g.number_of_nodes() * args.ratio)]
 
-            if args.model == "JKNET":
-                sampler = dgl.dataloading.MultiLayerFullNeighborSampler(args.num_layers + 1)
-            else:
-                # if args.l is not None:
-                #     print("!1")
-                #     sampler = dgl.dataloading.NeighborSampler(args.l)
-                # else:
-                sampler = dgl.dataloading.MultiLayerFullNeighborSampler(args.num_layers)
-            dataloader = dgl.dataloading.NodeDataLoader(
-                g, nids, sampler, batch_size=args.batch_size, 
-                shuffle=False, drop_last=False, use_uva=True, device=device, num_workers=0)
-            pred = torch.zeros(g.number_of_nodes(), model.out_features)
-            pin_memory_inplace(feat)
-            profiler = Profiler()
-            profiler.record_and_reset()
-            for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
-                print(blocks)
-                profiler.tag()
-                # print(blocks)
-                input_features = gather_pinned_tensor_rows(feat, input_nodes)
-                profiler.tag()
-                ret = model(blocks, input_features)
-                profiler.tag()
-                pred[output_nodes] = ret.cpu()
-                profiler.record_and_reset()
-                # print(time.time()-t)
-                # t = time.time()
-            profiler.show()
-            unpin_memory_inplace(feat)
-            cost_time = time.time() - st
-            func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
-            print("TOP DOWN Inference: {}, inference time: {}".format(func_score, cost_time))
-
-        elif args.gpufull:
-            print(args.num_layers, args.model, "GPU FULL", args.dataset, args.num_heads, args.num_hidden)
-            st = time.time()
-            pred = model.forward_full(g.to(device), feat.to(device))
-            cost_time = time.time() - st
-            func_score = (torch.argmax(pred, dim=1) == labels.to(device)).float().sum() / len(pred)
-            print("GPU Inference: {}, inference time: {}".format(func_score, cost_time))
-
-        elif args.cpufull:
-            print(args.num_layers, args.model, "CPU FULL", args.dataset, args.num_heads, args.num_hidden)
-            st = time.time()
-            model.to('cpu')
-            pred = model.forward_full(g, feat)
-            model.to(device)
-            cost_time = time.time() - st
-            func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
-            print("CPU Inference: {}, inference time: {}".format(func_score, cost_time))
-
-        elif args.auto:
-            if args.reorder:
+        if args.auto:
+            if args.reorder and args.rabbit:
+                np_array = np.load("rabbit/" + args.dataset + ".npy")
+                nids = torch.tensor(np_array).to(g.device)
+            elif args.reorder:
                 nids = torch.arange(g.number_of_nodes())
             else:
                 nids = torch.randperm(g.number_of_nodes())
-            print(args.num_layers, args.model, "auto", args.dataset, args.num_heads, args.num_hidden, "reorder" if args.reorder else "")
-            helper = AutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, free_rate=args.free_rate, nids=nids, ratio = args.ratio, fan_out=None, debug = args.debug)
+            print(args.num_layers, args.model, "auto", args.dataset, args.num_heads, args.num_hidden, "reorder" if args.reorder else "", "SSD")
+            helper = SSDAutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, free_rate=args.free_rate, use_random=not args.reorder, debug = args.debug)
+            helper.dataset_name = args.dataset
             helper.ret_shapes = helper._trace_output_shape((feat,))
             torch.cuda.synchronize()
             st = time.time()
@@ -348,6 +262,12 @@ def train(args):
             cost_time = time.time() - st
             helper_score = (torch.argmax(helper_pred, dim=1) == labels).float().sum() / len(helper_pred)
             print("Helper Inference: {}, inference time: {}".format(helper_score, cost_time))
+            if os.path.exists("/realssd/feat_output.npy"):
+                os.remove("/realssd/feat_output.npy")
+            if os.path.exists("/realssd/feat_relu_2.npy"):
+                os.remove("/realssd/feat_relu_2.npy")
+            if os.path.exists("/realssd/feat_mean.npy"):
+                os.remove("/realssd/feat_mean.npy")
 
         else:
             if args.gpu == -1:
@@ -356,10 +276,14 @@ def train(args):
                 print(args.num_layers, args.model, "GPU", args.batch_size, args.dataset, args.num_heads, args.num_hidden)
             st = time.time()
             if args.reorder:
-                nids = torch.arange(g.number_of_nodes()).to(g.device)
+                if args.rabbit:
+                    np_array = np.load("~/inference_helper/rabbit/" + args.dataset + ".npy")
+                    nids = torch.tensor(np_array).to(g.device)
+                else:
+                    nids = torch.arange(g.number_of_nodes()).to(g.device)
             else:
                 nids = torch.randperm(g.number_of_nodes()).to(g.device)
-            pred = model.inference(g, args.batch_size, torch.device(device), feat, nids, args.use_uva, False)
+            pred = model.inference(g, args.batch_size, torch.device(device), feat, nids, args.use_uva, args.ssd)
             cost_time = time.time() - st
             func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
             if args.gpu != -1:
@@ -370,6 +294,7 @@ def train(args):
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
     argparser.add_argument('--reorder', help="use the reordered graph", action="store_true")
+    argparser.add_argument('--rabbit', help="use the rabbit reordered graph", action="store_true")
     argparser.add_argument('--use-uva', help="use the pinned memory", action="store_true")
     argparser.add_argument('--free-rate', help="free memory rate", type=float, default=0.9)
     argparser.add_argument('--ratio', help="", type=float, default=None)

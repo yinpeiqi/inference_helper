@@ -268,6 +268,8 @@ def train(args):
             break
 
     with torch.no_grad():
+        if args.rabbit and args.reorder:
+            print("rabbit")
         if args.ratio:
             print("Ratio:", args.ratio)
         # if args.l:
@@ -335,7 +337,10 @@ def train(args):
             print("CPU Inference: {}, inference time: {}".format(func_score, cost_time))
 
         elif args.auto:
-            if args.reorder:
+            if args.reorder and args.rabbit:
+                np_array = np.load("rabbit/" + args.dataset + ".npy")
+                nids = torch.tensor(np_array).to(g.device)
+            elif args.reorder:
                 nids = torch.arange(g.number_of_nodes())
             else:
                 nids = torch.randperm(g.number_of_nodes())
@@ -356,7 +361,11 @@ def train(args):
                 print(args.num_layers, args.model, "GPU", args.batch_size, args.dataset, args.num_heads, args.num_hidden)
             st = time.time()
             if args.reorder:
-                nids = torch.arange(g.number_of_nodes()).to(g.device)
+                if args.rabbit:
+                    np_array = np.load("~/inference_helper/rabbit/" + args.dataset + ".npy")
+                    nids = torch.tensor(np_array).to(g.device)
+                else:
+                    nids = torch.arange(g.number_of_nodes()).to(g.device)
             else:
                 nids = torch.randperm(g.number_of_nodes()).to(g.device)
             pred = model.inference(g, args.batch_size, torch.device(device), feat, nids, args.use_uva, False)
@@ -370,6 +379,7 @@ def train(args):
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
     argparser.add_argument('--reorder', help="use the reordered graph", action="store_true")
+    argparser.add_argument('--rabbit', help="use the rabbit reordered graph", action="store_true")
     argparser.add_argument('--use-uva', help="use the pinned memory", action="store_true")
     argparser.add_argument('--free-rate', help="free memory rate", type=float, default=0.9)
     argparser.add_argument('--ratio', help="", type=float, default=None)
