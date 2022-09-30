@@ -94,15 +94,15 @@ class GraphRearranger():
 
     def generate_new_graphs(self, nodes):
         message_layers = [[] for _ in range(self.output.message_degree + 1)]
-        layers_input = [set() for _ in range(self.output.message_degree + 1)]
-        layers_output = [set() for _ in range(self.output.message_degree + 1)]
+        layers_input = [[] for _ in range(self.output.message_degree + 1)]
+        layers_output = [[] for _ in range(self.output.message_degree + 1)]
         for node in nodes:
             message_layers[node.message_degree].append(node)
             for e in node.out_edges:
                 if node.message_degree != e.dst.message_degree:
-                    layers_input[e.dst.message_degree].add(node)
+                    layers_input[e.dst.message_degree].append(node)
                     if node.node_type != DGL_GRAPH:
-                        layers_output[node.message_degree].add(node)
+                        layers_output[node.message_degree].append(node)
 
         for i, (inputs, nodes, outputs) in enumerate(zip(layers_input, message_layers, layers_output)):
             curr_graph = GraphReplicator()

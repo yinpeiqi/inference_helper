@@ -1,2 +1,3 @@
 from .inference_helper import InferenceHelper, EdgeControlInferenceHelper, AutoInferenceHelper, SSDAutoInferenceHelper
+from .hetero_inference_helper import HeteroInferenceHelper
 from .dglfx import dgl_symbolic_trace
