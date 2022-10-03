@@ -398,6 +398,6 @@ if __name__ == '__main__':
     if args.load_data:
         g, n_classes = load_data(args)
         print(g)
-        
+
     else:
         train(args)

@@ -128,7 +128,7 @@ def validate(
         elif inference_mode == 'full_neighbor_sampler':
             st = time.time()
 
-            helper = HeteroInferenceHelper(model, eval_batch_size, torch.device(device), debug = True)
+            helper = HeteroInferenceHelper(model, torch.device(device), debug = True)
             logits = helper.inference(
                 hg,
                 eval_batch_size,
@@ -452,6 +452,7 @@ if __name__ == '__main__':
                            action='store_true')
     argparser.set_defaults(test_validation=False)
     argparser.add_argument('--seed', default=13, type=int)
+    argparser.add_argument('--debug', action='store_true')
 
     args = argparser.parse_args()
 

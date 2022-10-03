@@ -1,4 +1,4 @@
-from typing import Generic
+from typing import Generic, Mapping
 import functools
 
 import torch
@@ -51,15 +51,19 @@ class CustomDataloader(dgl.dataloading.NodeDataLoader):
 class CustomDataset(dgl.dataloading.TensorizedDataset):
     def __init__(self, max_node, max_edge, g, train_nids, prefix_sum_in_degrees=None):
         super().__init__(train_nids, max_node, False)
+        self.is_hetero = isinstance(train_nids, Mapping)
+        if self.is_hetero:
+            train_nids = train_nids['paper'] # TODO: FIXME
         self.device = train_nids.device
         self.max_node = max_node
         self.max_edge = max_edge
         # move __iter__ to here
         # TODO not support multi processing yet
         # indices = _divide_by_worker(train_nids)
+        # self._id_tensor = torch.arange(g.number_of_nodes())
         id_tensor = self._id_tensor[train_nids.to(self._device)]
         self.prefix_sum_in_degrees = prefix_sum_in_degrees
-        if self.prefix_sum_in_degrees is None:
+        if self.prefix_sum_in_degrees is None and not self.is_hetero:
             in_degrees = g.in_degrees(train_nids.to(g.device))
             self.prefix_sum_in_degrees = [0]
             self.prefix_sum_in_degrees.extend(in_degrees.tolist())
@@ -88,19 +92,22 @@ class CustomDatasetIter(_TensorizedDatasetIter):
         self.num_item = self.dataset.shape[0]
 
     def get_end_idx(self):
-        # binary search
-        binary_start = self.index + 1
-        binary_end = min(self.index + self.max_node, self.num_item)
-        if self.prefix_sum_in_degrees[binary_end] - self.prefix_sum_in_degrees[self.index] < self.max_edge:
-            return binary_end
-        binary_middle = 0
-        while binary_end - binary_start > 5:
-            binary_middle = (binary_start + binary_end) // 2
-            if self.prefix_sum_in_degrees[binary_middle] - self.prefix_sum_in_degrees[self.index] < self.max_edge:
-                binary_start = binary_middle
-            else:
-                binary_end = binary_middle - 1
-        return binary_middle
+        if self.prefix_sum_in_degrees is None:
+            return min(self.index + self.max_node, self.num_item)
+        else:
+            # binary search
+            binary_start = self.index + 1
+            binary_end = min(self.index + self.max_node, self.num_item)
+            if self.prefix_sum_in_degrees[binary_end] - self.prefix_sum_in_degrees[self.index] < self.max_edge:
+                return binary_end
+            binary_middle = 0
+            while binary_end - binary_start > 5:
+                binary_middle = (binary_start + binary_end) // 2
+                if self.prefix_sum_in_degrees[binary_middle] - self.prefix_sum_in_degrees[self.index] < self.max_edge:
+                    binary_start = binary_middle
+                else:
+                    binary_end = binary_middle - 1
+            return binary_middle
 
     def _next_indices(self):
         if self.index >= self.num_item:
