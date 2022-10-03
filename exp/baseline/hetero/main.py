@@ -12,8 +12,8 @@ import tqdm
 from inference_helper import HeteroInferenceHelper
 
 import utils
-from model import EntityClassify, RelGraphEmbedding
-
+from rgcn import EntityClassify, RelGraphEmbedding
+from hgt import HGT
 
 def train(
     embedding_layer: nn.Module,
@@ -33,23 +33,21 @@ def train(
 
     start = default_timer()
 
-    embedding_layer = embedding_layer.to(device)
     model = model.to(device)
-    loss_function = loss_function.to(device)
 
     for step, (in_nodes, out_nodes, blocks) in enumerate(dataloader):
         embedding_optimizer.zero_grad()
         model_optimizer.zero_grad()
 
-        in_nodes = {rel: nid.to(device) for rel, nid in in_nodes.items()}
-        out_nodes = out_nodes[predict_category].to(device)
+        in_nodes = {rel: nid for rel, nid in in_nodes.items()}
+        out_nodes = out_nodes[predict_category]
         blocks = [block.to(device) for block in blocks]
 
-        batch_labels = labels[out_nodes].to(device)
+        batch_labels = labels[out_nodes]
 
         embedding = embedding_layer(in_nodes=in_nodes, device=device)
         logits_tuple = model(blocks, embedding['author'], embedding["field_of_study"], embedding["institution"], embedding["paper"])
-        logits = {"author": logits_tuple[0], "field_of_study": logits_tuple[1], "institution": logits_tuple[2], "paper": logits_tuple[3]}[predict_category]
+        logits = {"author": logits_tuple[0].cpu(), "field_of_study": logits_tuple[1].cpu(), "institution": logits_tuple[2].cpu(), "paper": logits_tuple[3].cpu()}[predict_category]
 
         loss = loss_function(logits, batch_labels)
 
@@ -93,11 +91,11 @@ def validate(
 
     start = default_timer()
 
-    embedding_layer = embedding_layer.to(device)
+    embedding_layer = embedding_layer
     model = model.to(device)
-    loss_function = loss_function.to(device)
+    loss_function = loss_function
 
-    valid_labels = labels[mask].to(device)
+    valid_labels = labels[mask]
 
     with torch.no_grad():
         if inference_mode == 'neighbor_sampler':
@@ -106,16 +104,15 @@ def validate(
             total_accuracy = 0
 
             for step, (in_nodes, out_nodes, blocks) in enumerate(tqdm.tqdm(dataloader)):
-                in_nodes = {rel: nid.to(device)
-                            for rel, nid in in_nodes.items()}
-                out_nodes = out_nodes[predict_category].to(device)
+                in_nodes = {rel: nid for rel, nid in in_nodes.items()}
+                out_nodes = out_nodes[predict_category]
                 blocks = [block.to(device) for block in blocks]
 
-                batch_labels = labels[out_nodes].to(device)
+                batch_labels = labels[out_nodes]
 
                 embedding = embedding_layer(in_nodes=in_nodes, device=device)
                 logits_tuple = model(blocks, embedding['author'], embedding["field_of_study"], embedding["institution"], embedding["paper"])
-                logits = {"author": logits_tuple[0], "field_of_study": logits_tuple[1], "institution": logits_tuple[2], "paper": logits_tuple[3]}[predict_category]
+                logits = {"author": logits_tuple[0].cpu(), "field_of_study": logits_tuple[1].cpu(), "institution": logits_tuple[2].cpu(), "paper": logits_tuple[3].cpu()}[predict_category]
 
                 loss = loss_function(logits, batch_labels)
 
@@ -250,21 +247,40 @@ def run(args: argparse.ArgumentParser) -> None:
     activations = {'leaky_relu': F.leaky_relu, 'relu': F.relu}
 
     embedding_layer = RelGraphEmbedding(hg, in_feats, num_nodes, node_feats)
-    model = EntityClassify(
-        hg,
-        in_feats,
-        args.hidden_feats,
-        out_feats,
-        args.num_bases,
-        args.num_layers,
-        norm=args.norm,
-        layer_norm=args.layer_norm,
-        input_dropout=args.input_dropout,
-        dropout=args.dropout,
-        activation=activations[args.activation],
-        self_loop=args.self_loop,
-    )
 
+    if args.model == "RGCN":
+        model = EntityClassify(
+            hg,
+            in_feats,
+            args.hidden_feats,
+            out_feats,
+            args.num_bases,
+            args.num_layers,
+            norm=args.norm,
+            layer_norm=args.layer_norm,
+            input_dropout=args.input_dropout,
+            dropout=args.dropout,
+            activation=activations[args.activation],
+            self_loop=args.self_loop,
+        )
+    elif args.model == "HGT":
+        node_dict = {}
+        edge_dict = {}
+        for ntype in hg.ntypes:
+            node_dict[ntype] = len(node_dict)
+        for etype in hg.etypes:
+            edge_dict[etype] = len(edge_dict)
+            hg.edges[etype].data['id'] = torch.ones(hg.number_of_edges(etype), dtype=torch.long) * edge_dict[etype] 
+
+        model = HGT(hg,
+            node_dict, edge_dict,
+            n_inp=in_feats,
+            n_hid=args.hidden_feats,
+            n_out=out_feats,
+            n_layers=args.num_layers,
+            n_heads=4,
+            use_norm = True)
+    
     loss_function = nn.CrossEntropyLoss()
 
     embedding_optimizer = torch.optim.SparseAdam(
@@ -380,6 +396,7 @@ if __name__ == '__main__':
 
     argparser.add_argument('--gpu-training', dest='gpu_training',
                            action='store_true')
+    argparser.add_argument("--model", default='RGCN', type=str)
     argparser.add_argument('--no-gpu-training', dest='gpu_training',
                            action='store_false')
     argparser.set_defaults(gpu_training=True)
@@ -423,7 +440,7 @@ if __name__ == '__main__':
     argparser.set_defaults(self_loop=True)
     argparser.add_argument('--fanouts', default='30,25,20', type=str)
     argparser.add_argument('--batch-size', default=1024, type=int)
-    argparser.add_argument('--eval-batch-size', default=1024, type=int)
+    argparser.add_argument('--eval-batch-size', default=10240, type=int)
     argparser.add_argument('--num-workers', default=4, type=int)
     argparser.add_argument('--eval-num-workers', default=4, type=int)
     argparser.add_argument('--early-stopping-patience', default=10, type=int)

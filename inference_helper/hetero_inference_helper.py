@@ -48,23 +48,20 @@ class HeteroInferenceHelper():
 
             if i < self.m._num_layers - 1:
                 y = {ntype: torch.zeros(hg.num_nodes(
-                    ntype), self.m._hidden_feats, device=device) for ntype in hg.ntypes}
+                    ntype), self.m._hidden_feats) for ntype in hg.ntypes}
             else:
                 y = {ntype: torch.zeros(hg.num_nodes(
-                    ntype), self.m._out_feats, device=device) for ntype in hg.ntypes}
+                    ntype), self.m._out_feats) for ntype in hg.ntypes}
 
             for in_nodes, out_nodes, blocks in tqdm.tqdm(dataloader):
-                in_nodes = {rel: nid.to(device)
-                            for rel, nid in in_nodes.items()}
-                out_nodes = {rel: nid.to(device)
-                             for rel, nid in out_nodes.items()}
+                in_nodes = {rel: nid for rel, nid in in_nodes.items()}
+                out_nodes = {rel: nid for rel, nid in out_nodes.items()}
                 block = blocks[0].to(device)
 
                 if i == 0:
                     h = embedding_layer(in_nodes=in_nodes, device=device)
                 else:
-                    h = {ntype: x[ntype][in_nodes[ntype]]
-                         for ntype in hg.ntypes}
+                    h = {ntype: x[ntype][in_nodes[ntype]].to(device) for ntype in hg.ntypes}
 
                 args = ()
                 for ntype in hg.ntypes:
@@ -78,7 +75,7 @@ class HeteroInferenceHelper():
 
                 for ntype in h_dict:
                     if ntype in out_nodes:
-                        y[ntype][out_nodes[ntype]] = h_dict[ntype]
+                        y[ntype][out_nodes[ntype]] = h_dict[ntype].cpu()
 
             x = y
 

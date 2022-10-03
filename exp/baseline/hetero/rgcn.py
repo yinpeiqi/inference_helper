@@ -58,13 +58,14 @@ class RelGraphEmbedding(nn.Module):
                 x[ntype] = self.node_embeddings[ntype](nid)
             else:
                 if device is not None:
-                    self._node_feats[ntype] = self._node_feats[ntype].to(
-                        device)
+                    self._node_feats[ntype] = self._node_feats[ntype].to(device)
 
                 if self._node_feats_projection:
                     x[ntype] = self._node_feats[ntype][nid] @ self.embeddings[ntype]
                 else:
                     x[ntype] = self._node_feats[ntype][nid]
+            if device is not None:
+                x[ntype] = x[ntype].to(device)
 
         return x
 
@@ -311,15 +312,15 @@ class EntityClassify(nn.Module):
 
             if i < self._num_layers - 1:
                 y = {ntype: torch.zeros(hg.num_nodes(
-                    ntype), self._hidden_feats, device=device) for ntype in hg.ntypes}
+                    ntype), self._hidden_feats) for ntype in hg.ntypes}
             else:
                 y = {ntype: torch.zeros(hg.num_nodes(
-                    ntype), self._out_feats, device=device) for ntype in hg.ntypes}
+                    ntype), self._out_feats) for ntype in hg.ntypes}
 
             for in_nodes, out_nodes, blocks in dataloader:
-                in_nodes = {rel: nid.to(device)
+                in_nodes = {rel: nid
                             for rel, nid in in_nodes.items()}
-                out_nodes = {rel: nid.to(device)
+                out_nodes = {rel: nid
                              for rel, nid in out_nodes.items()}
                 block = blocks[0].to(device)
 
@@ -338,7 +339,7 @@ class EntityClassify(nn.Module):
 
                 for ntype in h:
                     if ntype in out_nodes:
-                        y[ntype][out_nodes[ntype]] = h[ntype]
+                        y[ntype][out_nodes[ntype]] = h[ntype].cpu()
 
             x = y
 
