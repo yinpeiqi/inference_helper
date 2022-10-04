@@ -12,7 +12,6 @@ from .auto_tuner import get_auto_tuner
 from .function_generator import FunctionGenerator
 from .data_manager import DataManager
 from .custom_dataloader import CustomDataloader
-from .hetero_dataloader import HeteroDataloader
 from .utils import get_new_arg_input, update_ret_output
 
 class HeteroInferenceHelper():
