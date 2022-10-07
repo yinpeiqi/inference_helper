@@ -195,19 +195,26 @@ class AutoInferenceHelper(InferenceHelperBase):
         super().__init__(module, device, use_uva, debug)
 
     def before_inference(self, graph, *args):
-        if self.ratio:
-            st = time.time()
-            self.targets = [self.nids[:int(graph.number_of_nodes() * self.ratio)]]
-            for i in range(len(self._schema.layers) - 1):
-                in_e = graph.in_edges(self.targets[0])[0]
-                in_neighbors = torch.unique(in_e)
-                self.targets = [in_neighbors] + self.targets
         in_degrees = graph.in_degrees(self.nids).numpy()
         self.in_degrees = in_degrees
         prefix_sum_in_degrees = np.cumsum(in_degrees)
-        self.prefix_sum_in_degrees = [0]
-        self.prefix_sum_in_degrees.extend(prefix_sum_in_degrees.tolist())
-        self.prefix_sum_in_degrees.append(2e18)
+        avg_in_deg = prefix_sum_in_degrees[-1] / graph.num_nodes()
+
+        if self.ratio:
+            self.targets = [self.nids[:int(graph.number_of_nodes() * self.ratio)]]
+            sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
+            for i in range(len(self._schema.layers) - 1):
+                # TODO: here I choose a constant factor 0.8
+                if self.targets[0].size()[0] * avg_in_deg > graph.num_nodes() * 0.8:
+                    self.targets = [self.nids] + self.targets
+                else:
+                    src, _, _ = sampler.sample(graph, self.targets[0])
+                    self.targets = [src] + self.targets
+
+        if self.targets[0].size()[0] == graph.num_nodes() or not self.ratio:
+            self.prefix_sum_in_degrees = [0]
+            self.prefix_sum_in_degrees.extend(prefix_sum_in_degrees.tolist())
+            self.prefix_sum_in_degrees.append(2e18)
 
     def compute(self, graph, rets, layer, func):
         if self._use_uva:
@@ -215,7 +222,7 @@ class AutoInferenceHelper(InferenceHelperBase):
             if not self.ratio:
                 self.nids = self.nids.to(self._device)
 
-        if self.ratio:
+        if self.ratio and self.targets[layer.id].size() != graph.num_nodes():
             self.nids = self.targets[layer.id]
             in_degrees = self.in_degrees[self.nids]
             prefix_sum_in_degrees = np.cumsum(in_degrees)
@@ -246,6 +253,7 @@ class AutoInferenceHelper(InferenceHelperBase):
         max_memory = 0
         memorys = []
         nodes = []
+        edges = []
         profiler = Profiler()
         profiler.record_and_reset()
         for input_nodes, output_nodes, blocks in dataloader:
@@ -280,6 +288,7 @@ class AutoInferenceHelper(InferenceHelperBase):
                 nxt_max_node, nxt_max_edge = auto_tuner.search(blocks[0])
                 memorys.append(torch.cuda.max_memory_allocated() // 1024 ** 2)
                 nodes.append(output_nodes.shape[0])
+                edges.append(blocks[0].num_edges())
                 max_memory = max(torch.cuda.max_memory_allocated() // 1024 ** 2, max_memory)
                 # pbar.update(output_nodes.shape[0])
 
@@ -303,6 +312,7 @@ class AutoInferenceHelper(InferenceHelperBase):
         # pbar.close()
         print(memorys)
         print(nodes)
+        print("num edge:", sum(edges))
         profiler.show()
         print("maximum memory allocated: ", max_memory)
         return rets
