@@ -11,7 +11,7 @@ from exp_model.gcn import StochasticTwoLayerGCN
 from exp_model.sage import SAGE
 from exp_model.gat import  GAT
 from exp_model.jknet import JKNet
-from inference_helper import InferenceHelper, EdgeControlInferenceHelper, AutoInferenceHelper
+from inference_helper import InferenceHelper, EdgeControlInferenceHelper, AutoInferenceHelper, RatioAutoInferenceHelper
 from dgl.utils import pin_memory_inplace, unpin_memory_inplace, gather_pinned_tensor_rows
 
 import os
@@ -340,7 +340,10 @@ def train(args):
             else:
                 nids = torch.randperm(g.number_of_nodes())
             print(args.num_layers, args.model, "auto", args.dataset, args.num_heads, args.num_hidden, "reorder" if args.reorder else "")
-            helper = AutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, free_rate=args.free_rate, nids=nids, ratio = args.ratio, fan_out=None, debug = args.debug)
+            if args.ratio:
+                helper = RatioAutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, free_rate=args.free_rate, nids=nids, ratio = args.ratio, fan_out=None, debug = args.debug)
+            else:
+                helper = AutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, free_rate=args.free_rate, nids=nids, ratio = args.ratio, fan_out=None, debug = args.debug)
             helper.ret_shapes = helper._trace_output_shape((feat,))
             torch.cuda.synchronize()
             st = time.time()
