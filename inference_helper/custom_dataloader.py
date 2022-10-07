@@ -52,17 +52,19 @@ class CustomDataset(dgl.dataloading.TensorizedDataset):
     def __init__(self, max_node, max_edge, g, train_nids, prefix_sum_in_degrees=None):
         super().__init__(train_nids, max_node, False)
         self.is_hetero = isinstance(train_nids, Mapping)
-        if self.is_hetero:
-            train_nids = train_nids['paper'] # TODO: FIXME
+        if not self.is_hetero:
+            self._id_tensor = torch.arange(g.number_of_nodes())     
+            self._id_tensor = self._id_tensor[train_nids.to(self._device)]   
+            self.device = train_nids.device
         else:
-            self._id_tensor = torch.arange(g.number_of_nodes())        
-        self.device = train_nids.device
+            for k, v in train_nids.items():
+                self.device = v.device
+                break
         self.max_node = max_node
         self.max_edge = max_edge
         # move __iter__ to here
         # TODO not support multi processing yet
         # indices = _divide_by_worker(train_nids)
-        id_tensor = self._id_tensor[train_nids.to(self._device)]
         self.prefix_sum_in_degrees = prefix_sum_in_degrees
         if self.prefix_sum_in_degrees is None and not self.is_hetero:
             in_degrees = g.in_degrees(train_nids.to(g.device))
@@ -72,7 +74,7 @@ class CustomDataset(dgl.dataloading.TensorizedDataset):
                 self.prefix_sum_in_degrees[i] += self.prefix_sum_in_degrees[i - 1]
             self.prefix_sum_in_degrees.append(2e18)
         self.curr_iter = CustomDatasetIter(
-            id_tensor, self.max_node, self.max_edge, self.prefix_sum_in_degrees, self.drop_last, self._mapping_keys)
+            self._id_tensor, self.max_node, self.max_edge, self.prefix_sum_in_degrees, self.drop_last, self._mapping_keys)
 
     def __getattr__(self, attribute_name):
         if attribute_name in CustomDataset.functions:
