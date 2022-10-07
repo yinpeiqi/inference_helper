@@ -211,10 +211,15 @@ class AutoInferenceHelper(InferenceHelperBase):
                     src, _, _ = sampler.sample(graph, self.targets[0])
                     self.targets = [src] + self.targets
 
-        if self.targets[0].size()[0] == graph.num_nodes() or not self.ratio:
+        if not self.ratio or self.targets[0].size()[0] == graph.num_nodes():
             self.prefix_sum_in_degrees = [0]
             self.prefix_sum_in_degrees.extend(prefix_sum_in_degrees.tolist())
             self.prefix_sum_in_degrees.append(2e18)
+
+    def init_ret(self, arg_node, shape):
+        if self.ratio and arg_node.output_layer.id is not None:
+            return torch.zeros((self.targets[arg_node.output_layer.id],) + shape[1:])
+        return torch.zeros(shape)
 
     def compute(self, graph, rets, layer, func):
         if self._use_uva:
@@ -259,6 +264,157 @@ class AutoInferenceHelper(InferenceHelperBase):
         for input_nodes, output_nodes, blocks in dataloader:
             profiler.tag()
             try:
+                auto_tuner.reset_state()
+                torch.cuda.empty_cache()
+                auto_tuner.set_free(self.free_rate)
+
+                profiler.record_name("total input nodes", input_nodes.shape[0])
+
+                new_args = get_new_arg_input(layer.inputs, self._data_manager, input_nodes, 
+                    blocks[0], self._device, self._use_uva)
+                profiler.tag()
+                # if isinstance(new_args[0], torch.Tensor):
+                #     h = new_args[0]
+                # else:
+                #     h = new_args[1]
+                # print(h.shape, "%.2f"%(profiler.last()), "s;", "%.2f"%(h.shape[0]*h.shape[1]*4/1000**3), "GB;", "%.2f"%(h.shape[0]*h.shape[1]*4 / profiler.last() / 1000**3), "GB/s")
+
+                output_vals = func(*new_args)
+                del new_args
+                profiler.tag()
+                if self._debug:
+                    print(blocks[0], "; max memory = ", torch.cuda.max_memory_allocated() // 1024 ** 2, "MB")
+
+                rets = update_ret_output(output_vals, rets, input_nodes, output_nodes, blocks)
+                del output_vals
+                profiler.tag()
+
+                auto_tuner.set_max()
+                nxt_max_node, nxt_max_edge = auto_tuner.search(blocks[0])
+                memorys.append(torch.cuda.max_memory_allocated() // 1024 ** 2)
+                nodes.append(output_nodes.shape[0])
+                edges.append(blocks[0].num_edges())
+                max_memory = max(torch.cuda.max_memory_allocated() // 1024 ** 2, max_memory)
+                # pbar.update(output_nodes.shape[0])
+
+            except Exception as e:
+                print(e)
+                profiler.tag()
+                nxt_max_node, nxt_max_edge = auto_tuner.break_peak(blocks[0])
+                dataloader.reset_batch_node(output_nodes.shape[0])
+                gc.collect()
+
+            finally:
+                dataloader.modify_max_node(nxt_max_node)
+                dataloader.modify_max_edge(nxt_max_edge)
+                torch.cuda.empty_cache()
+                torch.cuda.reset_peak_memory_stats()
+                profiler.record_and_reset()
+
+        if self._use_uva:
+            self._data_manager.unpin_data_inplace(layer)
+
+        # pbar.close()
+        print(memorys)
+        print(nodes)
+        print("num edge:", sum(edges))
+        profiler.show()
+        print("maximum memory allocated: ", max_memory)
+        return rets
+
+
+
+class RatioAutoInferenceHelper(InferenceHelperBase):
+    def __init__(self, module: nn.Module, device, use_uva, free_rate, nids, ratio=None, fan_out=None, debug = False):
+        self.free_rate = free_rate
+        self.nids = nids
+        assert ratio is not None
+        self.ratio = ratio
+        self.fan_out = fan_out
+        super().__init__(module, device, use_uva, debug)
+
+    def before_inference(self, graph, *args):
+        in_degrees = graph.in_degrees(self.nids).numpy()
+        self.in_degrees = in_degrees
+        prefix_sum_in_degrees = np.cumsum(in_degrees)
+        avg_in_deg = prefix_sum_in_degrees[-1] / graph.num_nodes()
+
+        self.targets = [self.nids[:int(graph.number_of_nodes() * self.ratio)]]
+        sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
+        for i in range(len(self._schema.layers) - 1):
+            # TODO: here I choose a constant factor 0.8
+            if self.targets[0].size()[0] * avg_in_deg > graph.num_nodes() * 0.8:
+                self.targets = [self.nids] + self.targets
+            else:
+                src, _, _ = sampler.sample(graph, self.targets[0])
+                self.targets = [src] + self.targets
+
+        if self.targets[0].size()[0] == graph.num_nodes():
+            self.prefix_sum_in_degrees = [0]
+            self.prefix_sum_in_degrees.extend(prefix_sum_in_degrees.tolist())
+            self.prefix_sum_in_degrees.append(2e18)
+
+    def init_ret(self, arg_node, shape):
+        if arg_node.output_layer.id is not None:
+            return torch.zeros((self.targets[arg_node.output_layer.id],) + shape[1:])
+        return torch.zeros(shape)
+
+    def compute(self, graph, rets, layer, func):
+        if self._use_uva:
+            self._data_manager.pin_data_inplace(layer)
+            self.nids = self.nids.to(self._device)
+
+        st_input_node = None
+        st_output_node = None
+        if self.targets[layer.id].size() != graph.num_nodes:
+            st_input_node = 0
+        if len(self.targets) == layer.id + 1 or self.targets[layer.id + 1].size() != graph.num_nodes:
+            st_output_node = 0
+
+        if self.targets[layer.id].size() != graph.num_nodes():
+            self.nids = self.targets[layer.id]
+            in_degrees = self.in_degrees[self.nids]
+            prefix_sum_in_degrees = np.cumsum(in_degrees)
+            self.prefix_sum_in_degrees = [0]
+            self.prefix_sum_in_degrees.extend(prefix_sum_in_degrees.tolist())
+            self.prefix_sum_in_degrees.append(2e18)
+
+        auto_tuner = get_auto_tuner(self._device)
+        start_max_node = 2000
+        start_max_edge = 500000
+
+        if self.fan_out is not None:
+            sampler = dgl.dataloading.NeighborSampler([self.fan_out[layer.id]])
+        else:
+            sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
+        dataloader = CustomDataloader(
+            graph,
+            self.nids,
+            sampler,
+            start_max_node,
+            start_max_edge,
+            self.prefix_sum_in_degrees,
+            device=self._device,
+            use_uva=self._use_uva,
+            shuffle=False)
+
+        # pbar = tqdm.tqdm(total=graph.number_of_nodes())
+        max_memory = 0
+        memorys = []
+        nodes = []
+        edges = []
+        profiler = Profiler()
+        profiler.record_and_reset()
+        for input_nodes, output_nodes, blocks in dataloader:
+            profiler.tag()
+            try:
+                if st_input_node is not None:
+                    input_nodes = torch.arange(st_input_node, input_nodes.size()[0])
+                    st_input_node = input_nodes.size()[0]
+                if st_output_node is not None:
+                    output_nodes = torch.arange(st_output_node, output_nodes.size()[0])
+                    st_output_node = output_nodes.size()[0]
+                
                 auto_tuner.reset_state()
                 torch.cuda.empty_cache()
                 auto_tuner.set_free(self.free_rate)
