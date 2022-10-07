@@ -13,6 +13,7 @@ from .function_generator import FunctionGenerator
 from .data_manager import DataManager
 from .custom_dataloader import CustomDataloader
 from .utils import get_new_arg_input, update_ret_output
+import tqdm
 
 class HeteroInferenceHelper():
     def __init__(self, module: nn.Module, device, use_uva = False, debug = False):
@@ -132,3 +133,69 @@ class HeteroInferenceHelper():
 
         return x
 
+
+    def static_inference(
+        self,
+        hg: dgl.DGLHeteroGraph,
+        batch_size: int,
+        num_workers: int,
+        embedding_layer: nn.Module,
+        device: torch.device,
+    ):
+        for i, func in enumerate(self._funcs):
+            sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
+            dataloader = dgl.dataloading.DataLoader(
+                hg,
+                {ntype: hg.nodes(ntype) for ntype in hg.ntypes},
+                sampler,
+                batch_size=batch_size,
+                shuffle=False,
+                drop_last=False,
+                # num_workers=num_workers,
+            )
+
+            if i < self.m._num_layers - 1:
+                y = {ntype: torch.zeros(hg.num_nodes(
+                    ntype), self.m._hidden_feats) for ntype in hg.ntypes}
+            else:
+                y = {ntype: torch.zeros(hg.num_nodes(
+                    ntype), self.m._out_feats) for ntype in hg.ntypes}
+
+            profiler = Profiler()
+            profiler.record_and_reset()
+            for in_nodes, out_nodes, blocks in tqdm.tqdm(dataloader):
+                profiler.tag()
+                in_nodes = {rel: nid for rel, nid in in_nodes.items()}
+                out_nodes = {rel: nid for rel, nid in out_nodes.items()}
+                block = blocks[0].to(device)
+
+                if i == 0:
+                    h = embedding_layer(in_nodes=in_nodes, device=device)
+                else:
+                    h = {ntype: x[ntype][in_nodes[ntype]].to(device) for ntype in hg.ntypes}
+
+                args = ()
+                for ntype in hg.ntypes:
+                    args = args + (h[ntype],)
+
+                profiler.tag()
+                hx = func(block, *args)
+
+                h_dict = {}
+                for j, ntype in enumerate(hg.ntypes):
+                    h_dict[ntype] = hx[j]
+                profiler.tag()
+            
+                for ntype in h_dict:
+                    if ntype in out_nodes:
+                        y[ntype][out_nodes[ntype]] = h_dict[ntype].cpu()
+
+                profiler.tag()
+                del hx, h_dict
+                torch.cuda.empty_cache()
+                profiler.record_and_reset()
+
+            x = y
+            profiler.show()
+
+        return x

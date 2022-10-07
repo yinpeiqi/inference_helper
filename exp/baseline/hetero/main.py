@@ -38,7 +38,7 @@ def train(
     for step, (in_nodes, out_nodes, blocks) in enumerate(dataloader):
         embedding_optimizer.zero_grad()
         model_optimizer.zero_grad()
-
+        break
         in_nodes = {rel: nid for rel, nid in in_nodes.items()}
         out_nodes = out_nodes[predict_category]
         blocks = [block.to(device) for block in blocks]
@@ -85,6 +85,7 @@ def validate(
     eval_batch_size: int = None,
     eval_num_workers: int = None,
     mask: torch.Tensor = None,
+    auto = False
 ) -> Tuple[float]:
     embedding_layer.eval()
     model.eval()
@@ -103,39 +104,55 @@ def validate(
             total_loss = 0
             total_accuracy = 0
 
+            st = time.time()
+            y = {ntype: torch.zeros(hg.num_nodes(ntype), 128) for ntype in hg.ntypes}
             for step, (in_nodes, out_nodes, blocks) in enumerate(tqdm.tqdm(dataloader)):
+                torch.cuda.empty_cache()
                 in_nodes = {rel: nid for rel, nid in in_nodes.items()}
-                out_nodes = out_nodes[predict_category]
+                out_nodes = {rel: nid for rel, nid in out_nodes.items()}
                 blocks = [block.to(device) for block in blocks]
 
-                batch_labels = labels[out_nodes]
+                # batch_labels = labels[out_nodes]
 
                 embedding = embedding_layer(in_nodes=in_nodes, device=device)
                 logits_tuple = model(blocks, embedding['author'], embedding["field_of_study"], embedding["institution"], embedding["paper"])
                 logits = {"author": logits_tuple[0].cpu(), "field_of_study": logits_tuple[1].cpu(), "institution": logits_tuple[2].cpu(), "paper": logits_tuple[3].cpu()}[predict_category]
 
-                loss = loss_function(logits, batch_labels)
+                for ntype in logits:
+                    if ntype in out_nodes:
+                        y[ntype][out_nodes[ntype]] = logits[ntype].cpu()
+            print("eval time:", time.time()-st)
+            #     loss = loss_function(logits, batch_labels)
 
-                indices = logits.argmax(dim=-1)
-                correct = torch.sum(indices == batch_labels)
-                accuracy = correct.item() / len(batch_labels)
+            #     indices = logits.argmax(dim=-1)
+            #     correct = torch.sum(indices == batch_labels)
+            #     accuracy = correct.item() / len(batch_labels)
 
-                total_loss += loss.item()
-                total_accuracy += accuracy
+            #     total_loss += loss.item()
+            #     total_accuracy += accuracy
 
-            total_loss /= step + 1
-            total_accuracy /= step + 1
+            # total_loss /= step + 1
+            # total_accuracy /= step + 1
         elif inference_mode == 'full_neighbor_sampler':
-            st = time.time()
 
             helper = HeteroInferenceHelper(model, torch.device(device), debug = True)
-            logits = helper.inference(
-                hg,
-                eval_batch_size,
-                eval_num_workers,
-                embedding_layer,
-                device,
-            )[predict_category][mask]
+            st = time.time()
+            if auto:
+                logits = helper.inference(
+                    hg,
+                    eval_batch_size,
+                    eval_num_workers,
+                    embedding_layer,
+                    device,
+                )[predict_category][mask]
+            else:
+                logits = helper.static_inference(
+                    hg,
+                    eval_batch_size,
+                    eval_num_workers,
+                    embedding_layer,
+                    device,
+                )[predict_category][mask]
 
             # logits = model.inference(
             #     hg,
@@ -207,14 +224,16 @@ def run(args: argparse.ArgumentParser) -> None:
             valid_sampler = dgl.dataloading.MultiLayerFullNeighborSampler(args.num_layers)
         else:
             valid_sampler = dgl.dataloading.MultiLayerNeighborSampler(fanouts)
+        
+        sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
         valid_dataloader = dgl.dataloading.DataLoader(
             hg,
-            {predict_category: torch.arange(hg.num_nodes("paper"))},
+            # {predict_category: torch.arange(hg.num_nodes("paper"))},
+            {ntype: hg.nodes(ntype) for ntype in hg.ntypes},
             valid_sampler,
             batch_size=args.eval_batch_size,
             shuffle=False,
-            drop_last=False,
-            num_workers=args.eval_num_workers,
+            drop_last=False
         )
 
         if args.test_validation:
@@ -278,9 +297,9 @@ def run(args: argparse.ArgumentParser) -> None:
             n_hid=args.hidden_feats,
             n_out=out_feats,
             n_layers=args.num_layers,
-            n_heads=4,
+            n_heads=2,
             use_norm = True)
-    
+
     loss_function = nn.CrossEntropyLoss()
 
     embedding_optimizer = torch.optim.SparseAdam(
@@ -324,6 +343,7 @@ def run(args: argparse.ArgumentParser) -> None:
             eval_batch_size=args.eval_batch_size,
             eval_num_workers=args.eval_num_workers,
             mask=valid_idx,
+            auto=args.auto
         )
 
         checkpoint.create(
@@ -405,6 +425,7 @@ if __name__ == '__main__':
     argparser.add_argument('--no-gpu-inference', dest='gpu_inference',
                            action='store_false')
     argparser.add_argument('--topdown', action='store_true')
+    argparser.add_argument('--auto', action='store_true')
     argparser.set_defaults(gpu_inference=True)
     argparser.add_argument('--inference-mode', default='full_neighbor_sampler', type=str,
                            choices=['neighbor_sampler', 'full_neighbor_sampler', 'full_graph'])
@@ -440,7 +461,7 @@ if __name__ == '__main__':
     argparser.set_defaults(self_loop=True)
     argparser.add_argument('--fanouts', default='30,25,20', type=str)
     argparser.add_argument('--batch-size', default=1024, type=int)
-    argparser.add_argument('--eval-batch-size', default=10240, type=int)
+    argparser.add_argument('--eval-batch-size', default=50000, type=int)
     argparser.add_argument('--num-workers', default=4, type=int)
     argparser.add_argument('--eval-num-workers', default=4, type=int)
     argparser.add_argument('--early-stopping-patience', default=10, type=int)

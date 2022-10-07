@@ -201,18 +201,19 @@ class EntityClassify(nn.Module):
 
         self._layers = nn.ModuleList()
 
-        self._layers.append(RelGraphConvLayer(
-            in_feats,
-            hidden_feats,
-            self._rel_names,
-            self._num_bases,
-            norm=norm,
-            self_loop=self_loop,
-        ))
-
-        for _ in range(1, num_layers - 1):
+        if num_layers == 1:
             self._layers.append(RelGraphConvLayer(
-                hidden_feats,
+                in_feats,
+                out_feats,
+                self._rel_names,
+                self._num_bases,
+                norm=norm,
+                self_loop=self_loop,
+            ))
+
+        else:
+            self._layers.append(RelGraphConvLayer(
+                in_feats,
                 hidden_feats,
                 self._rel_names,
                 self._num_bases,
@@ -220,14 +221,24 @@ class EntityClassify(nn.Module):
                 self_loop=self_loop,
             ))
 
-        self._layers.append(RelGraphConvLayer(
-            hidden_feats,
-            out_feats,
-            self._rel_names,
-            self._num_bases,
-            norm=norm,
-            self_loop=self_loop,
-        ))
+            for _ in range(1, num_layers - 1):
+                self._layers.append(RelGraphConvLayer(
+                    hidden_feats,
+                    hidden_feats,
+                    self._rel_names,
+                    self._num_bases,
+                    norm=norm,
+                    self_loop=self_loop,
+                ))
+
+            self._layers.append(RelGraphConvLayer(
+                hidden_feats,
+                out_feats,
+                self._rel_names,
+                self._num_bases,
+                norm=norm,
+                self_loop=self_loop,
+            ))
 
         if layer_norm:
             self._layer_norms = nn.ModuleList()

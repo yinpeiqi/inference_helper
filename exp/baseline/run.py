@@ -369,7 +369,7 @@ def train(args):
 
 if __name__ == '__main__':
     assert (dgl.__version__ == "0.9")
-    assert (torch.__version__ == "1.10.1+cu113")
+#    assert (torch.__version__ == "1.10.1+cu113")
     argparser = argparse.ArgumentParser()
     argparser.add_argument('--reorder', help="use the reordered graph", action="store_true")
     argparser.add_argument('--use-uva', help="use the pinned memory", action="store_true")
