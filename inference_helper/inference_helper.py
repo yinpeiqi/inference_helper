@@ -216,11 +216,6 @@ class AutoInferenceHelper(InferenceHelperBase):
             self.prefix_sum_in_degrees.extend(prefix_sum_in_degrees.tolist())
             self.prefix_sum_in_degrees.append(2e18)
 
-    def init_ret(self, arg_node, shape):
-        if self.ratio and arg_node.output_layer.id is not None:
-            return torch.zeros((self.targets[arg_node.output_layer.id],) + shape[1:])
-        return torch.zeros(shape)
-
     def compute(self, graph, rets, layer, func):
         if self._use_uva:
             self._data_manager.pin_data_inplace(layer)
@@ -354,22 +349,10 @@ class RatioAutoInferenceHelper(InferenceHelperBase):
             self.prefix_sum_in_degrees.extend(prefix_sum_in_degrees.tolist())
             self.prefix_sum_in_degrees.append(2e18)
 
-    def init_ret(self, arg_node, shape):
-        if arg_node.output_layer.id is not None:
-            return torch.zeros((self.targets[arg_node.output_layer.id],) + shape[1:])
-        return torch.zeros(shape)
-
     def compute(self, graph, rets, layer, func):
         if self._use_uva:
             self._data_manager.pin_data_inplace(layer)
             self.nids = self.nids.to(self._device)
-
-        st_input_node = None
-        st_output_node = None
-        if self.targets[layer.id].size() != graph.num_nodes:
-            st_input_node = 0
-        if len(self.targets) == layer.id + 1 or self.targets[layer.id + 1].size() != graph.num_nodes:
-            st_output_node = 0
 
         if self.targets[layer.id].size() != graph.num_nodes():
             self.nids = self.targets[layer.id]
@@ -408,13 +391,6 @@ class RatioAutoInferenceHelper(InferenceHelperBase):
         for input_nodes, output_nodes, blocks in dataloader:
             profiler.tag()
             try:
-                if st_input_node is not None:
-                    input_nodes = torch.arange(st_input_node, input_nodes.size()[0])
-                    st_input_node = input_nodes.size()[0]
-                if st_output_node is not None:
-                    output_nodes = torch.arange(st_output_node, output_nodes.size()[0])
-                    st_output_node = output_nodes.size()[0]
-                
                 auto_tuner.reset_state()
                 torch.cuda.empty_cache()
                 auto_tuner.set_free(self.free_rate)
