@@ -52,7 +52,11 @@ class OtherDataset(DGLDataset):
             col = []
             cur_node = 0
             node_mp = {}
-            with open(OtherDataset.raw_dir + "com-friendster.ungraph.txt", 'r') as f:
+            if self.dataset_name == "livejournal1":
+                file_name = OtherDataset.raw_dir + "soc-LiveJournal1.txt"
+            else:
+                file_name = OtherDataset.raw_dir + "com-" + self.dataset_name + ".ungraph.txt"
+            with open(file_name, 'r') as f:
                 for line in f:
                     arr = line.split()
                     if arr[0] == '#':
