@@ -86,8 +86,6 @@ class OtherDataset(DGLDataset):
                 print("Reorder is done, cost ", time.time()-t1)
                 save_graphs(reorder_graph_path, self._graph)
             
-            self._graph, _ = load_graphs(reorder_graph_path)
-            self._graph = self._graph[0]
             if not os.path.exists(reorder_bigraph_path):
                 graphs, _ = load_graphs(reorder_graph_path)
                 self._graph = dgl.to_bidirected(graphs[0])
