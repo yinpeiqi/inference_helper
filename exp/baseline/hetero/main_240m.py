@@ -225,6 +225,7 @@ if __name__ == '__main__':
     parser.add_argument('--auto', action='store_true')
     parser.add_argument("--model", default='RGCN', type=str)
     parser.add_argument('--free-rate', help="free memory rate", type=float, default=0.8)
+    parser.add_argument('--ratio', type=float, default=None)
     parser.add_argument('--hidden-feats', default=128, type=int)
     parser.add_argument('--num-layers', default=2, type=int)
     parser.add_argument('--epochs', type=int, default=0, help='Number of epochs.')
@@ -250,8 +251,6 @@ if __name__ == '__main__':
     pin_memory_inplace(paper_feats)
     pin_memory_inplace(institution_feats)
     print("Load features:", time.time()-t3)
-    # import pdb; pdb.set_trace()
-    # feats = np.memmap(args.full_feature_path, mode='r', dtype='float16', shape=(num_nodes, num_features))
     device = torch.device("cuda")
     node_dict = {}
     edge_dict = {}
@@ -293,10 +292,16 @@ if __name__ == '__main__':
             ret = helper.inference_240m(hg, author_feats, institution_feats, paper_feats, dataset, torch.device(device))
             print("inference time:", time.time() - st)
         else:
+            sst = time.time()
             sampler = dgl.dataloading.MultiLayerFullNeighborSampler(args.num_layers)
+            if args.ratio:
+                print("ratio:", args.ratio)
+                nids = hg.nodes('paper')[:int(hg.num_nodes('paper') * args.ratio)]
+            else:
+                nids = hg.nodes('paper')
             dataloader = dgl.dataloading.DataLoader(
                 hg,
-                {'paper': hg.nodes('paper')},
+                {'paper': nids},
                 # {ntype: hg.nodes(ntype) for ntype in hg.ntypes},
                 sampler,
                 batch_size=args.batch_size,
@@ -306,9 +311,11 @@ if __name__ == '__main__':
 
             st = time.time()
             y = {ntype: torch.zeros(hg.num_nodes(ntype), dataset.num_classes) for ntype in hg.ntypes}
+
+            for ntype in hg.ntypes:
+                pin_memory_inplace(y[ntype])
+
             for step, (in_nodes, out_nodes, blocks) in enumerate(tqdm.tqdm(dataloader)):
-                torch.cuda.synchronize()
-                torch.cuda.empty_cache()
                 in_nodes = {rel: nid for rel, nid in in_nodes.items()}
                 out_nodes = {rel: nid for rel, nid in out_nodes.items()}
                 blocks = [block.to(device) for block in blocks]
@@ -324,15 +331,9 @@ if __name__ == '__main__':
                     if ntype in out_nodes:
                         y[ntype][out_nodes[ntype]] = logits[ntype].cpu()
 
-                del new_feat, new_feat2, new_feat3, blocks
-                for ntype in logits:
-                    if ntype in out_nodes:
-                        del out_nodes[ntype]
-                    if ntype in in_nodes:
-                        del in_nodes[ntype]
-                del logits["author"], logits["institution"], logits["paper"]
+                del new_feat, new_feat2, new_feat3
                 del logits, author_out, inst_out, paper_out
                 torch.cuda.synchronize()
                 torch.cuda.empty_cache()
-                print(torch.cuda.memory_summary())
                 print("step:", step, "; time:", time.time()-st)
+            print("inference time:", time.time()-sst)
