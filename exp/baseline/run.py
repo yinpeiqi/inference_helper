@@ -216,6 +216,11 @@ def load_data(args):
     return dataset, dim
 
 def train(args):
+    if args.fan_out:
+        fan = [10 for _ in range(args.num_layers)]
+    else:
+        fan = None
+
     setup_seed(20)
     dataset, dim = load_data(args)
     g = dataset[0]
@@ -286,13 +291,14 @@ def train(args):
                 nids = nids[:int(g.number_of_nodes() * args.ratio)]
 
             if args.model == "JKNET":
+                if args.fan_out:
+                    raise Exception
                 sampler = dgl.dataloading.MultiLayerFullNeighborSampler(args.num_layers + 1)
             else:
-                # if args.l is not None:
-                #     print("!1")
-                #     sampler = dgl.dataloading.NeighborSampler(args.l)
-                # else:
-                sampler = dgl.dataloading.MultiLayerFullNeighborSampler(args.num_layers)
+                if args.fan_out:
+                    sampler = dgl.dataloading.NeighborSampler(fan)
+                else:
+                    sampler = dgl.dataloading.MultiLayerFullNeighborSampler(args.num_layers)
             dataloader = dgl.dataloading.NodeDataLoader(
                 g, nids, sampler, batch_size=args.batch_size, 
                 shuffle=False, drop_last=False, use_uva=True, device=device, num_workers=0)
@@ -303,7 +309,6 @@ def train(args):
             for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
                 print(blocks)
                 profiler.tag()
-                # print(blocks)
                 input_features = gather_pinned_tensor_rows(feat, input_nodes)
                 profiler.tag()
                 ret = model(blocks, input_features)
@@ -343,9 +348,9 @@ def train(args):
                 nids = torch.randperm(g.number_of_nodes())
             print(args.num_layers, args.model, "auto", args.dataset, args.num_heads, args.num_hidden, "reorder" if args.reorder else "")
             if args.ratio:
-                helper = RatioAutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, free_rate=args.free_rate, nids=nids, ratio = args.ratio, fan_out=None, debug = args.debug)
+                helper = RatioAutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, free_rate=args.free_rate, nids=nids, ratio = args.ratio, fan_out=fan, debug = args.debug)
             else:
-                helper = AutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, free_rate=args.free_rate, nids=nids, ratio = args.ratio, fan_out=None, debug = args.debug)
+                helper = AutoInferenceHelper(model, torch.device(device), use_uva = args.use_uva, free_rate=args.free_rate, nids=nids, ratio = args.ratio, fan_out=fan, debug = args.debug)
             helper.ret_shapes = helper._trace_output_shape((feat,))
             torch.cuda.synchronize()
             st = time.time()
@@ -391,6 +396,7 @@ if __name__ == '__main__':
 
     argparser.add_argument('--model', help="can be GCN, GAT, SAGE and JKNET", type=str, default='GCN')
     argparser.add_argument('--debug', action="store_true")
+    argparser.add_argument('--fan-out', action="store_true")
     argparser.add_argument('--num-epochs', type=int, default=0)
     argparser.add_argument('--dataset', type=str, default='ogbn-products')
     argparser.add_argument('--num-hidden', type=int, default=128)

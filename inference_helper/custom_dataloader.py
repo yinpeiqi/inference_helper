@@ -66,7 +66,7 @@ class CustomDataset(dgl.dataloading.TensorizedDataset):
         # TODO not support multi processing yet
         # indices = _divide_by_worker(train_nids)
         self.prefix_sum_in_degrees = prefix_sum_in_degrees
-        if self.prefix_sum_in_degrees is None and not self.is_hetero:
+        if self.prefix_sum_in_degrees is None and not self.is_hetero and self.max_edge is not None:
             in_degrees = g.in_degrees(train_nids.to(g.device))
             self.prefix_sum_in_degrees = [0]
             self.prefix_sum_in_degrees.extend(in_degrees.tolist())
@@ -95,7 +95,7 @@ class CustomDatasetIter(_TensorizedDatasetIter):
         self.num_item = self.dataset.shape[0]
 
     def get_end_idx(self):
-        if self.prefix_sum_in_degrees is None:
+        if self.prefix_sum_in_degrees is None or self.max_edge is None:
             return min(self.index + self.max_node, self.num_item)
         else:
             # binary search

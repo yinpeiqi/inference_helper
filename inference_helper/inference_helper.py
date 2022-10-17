@@ -66,7 +66,10 @@ class InferenceHelperBase():
         pass
 
     def init_ret(self, arg_node, shape):
-        return torch.zeros(shape)
+        st = time.time()
+        ret = torch.zeros(shape)
+        print("create ret:", time.time() - st)
+        return ret
 
     def clear_ret(self, arg_node):
         del self._data_manager[arg_node]
@@ -236,6 +239,7 @@ class AutoInferenceHelper(InferenceHelperBase):
 
         if self.fan_out is not None:
             sampler = dgl.dataloading.NeighborSampler([self.fan_out[layer.id]])
+            start_max_edge = None
         else:
             sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
         dataloader = CustomDataloader(
@@ -301,7 +305,8 @@ class AutoInferenceHelper(InferenceHelperBase):
 
             finally:
                 dataloader.modify_max_node(nxt_max_node)
-                dataloader.modify_max_edge(nxt_max_edge)
+                if start_max_edge is not None:
+                    dataloader.modify_max_edge(nxt_max_edge)
                 torch.cuda.empty_cache()
                 torch.cuda.reset_peak_memory_stats()
                 profiler.record_and_reset()
@@ -352,7 +357,6 @@ class RatioAutoInferenceHelper(InferenceHelperBase):
     def compute(self, graph, rets, layer, func):
         if self._use_uva:
             self._data_manager.pin_data_inplace(layer)
-            self.nids = self.nids.to(self._device)
 
         if self.targets[layer.id].size() != graph.num_nodes():
             self.nids = self.targets[layer.id]
