@@ -35,7 +35,7 @@ class StochasticTwoLayerGCN(nn.Module):
             x = F.relu(conv(blocks, (x, x_dst)))
         return x
 
-    def inference(self, g, batch_size, device, x, nids, use_uva = False, use_ssd = False):
+    def inference(self, g, batch_size, device, x, nids, use_uva = False, use_ssd = False, fan_out = None):
         if use_uva:
             for k in list(g.ndata.keys()):
                 g.ndata.pop(k)
@@ -61,7 +61,10 @@ class StochasticTwoLayerGCN(nn.Module):
             if use_uva:
                 pin_memory_inplace(x)
                 nids = nids.to(device)
-            sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
+            if fan_out is not None:
+                sampler = dgl.dataloading.NeighborSampler([fan_out[l]])
+            else:
+                sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
             dataloader = dgl.dataloading.NodeDataLoader(
                 g, nids, sampler,
                 batch_size=batch_size,

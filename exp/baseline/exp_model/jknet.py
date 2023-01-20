@@ -75,7 +75,7 @@ class JKNet(nn.Module):
 
         return self.output(agged)
 
-    def inference(self, g, batch_size, device, x, nids, use_uva = False, use_ssd = False):
+    def inference(self, g, batch_size, device, x, nids, use_uva = False, use_ssd = False, fan_out = None):
         for k in list(g.ndata.keys()):
             g.ndata.pop(k)
         for k in list(g.edata.keys()):
@@ -94,7 +94,10 @@ class JKNet(nn.Module):
             if use_uva:
                 pin_memory_inplace(x)
                 nids.to(device)
-            sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
+            if fan_out is not None:
+                sampler = dgl.dataloading.NeighborSampler([fan_out[l]])
+            else:
+                sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
             dataloader = dgl.dataloading.NodeDataLoader(
                 g,
                 nids,

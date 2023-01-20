@@ -128,13 +128,17 @@ class InferenceHelperBase():
 
 
 class InferenceHelper(InferenceHelperBase):
-    def __init__(self, module: nn.Module, batch_size, device, num_workers = 4, debug = False):
+    def __init__(self, module: nn.Module, batch_size, device, num_workers = 4, fan_out=None, debug = False):
         super().__init__(module, device, debug=debug)
         self._batch_size = batch_size
         self._num_workers = num_workers
+        self._fan_out = fan_out
 
     def compute(self, graph, rets, layer, func):
-        sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
+        if self._fan_out is not None:
+            sampler = dgl.dataloading.NeighborSampler([self._fan_out[layer.id]])
+        else:
+            sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
         dataloader = dgl.dataloading.NodeDataLoader(
             graph,
             torch.arange(graph.number_of_nodes()).to(graph.device),

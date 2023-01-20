@@ -93,9 +93,7 @@ class OtherDataset(DGLDataset):
             else:
                 self._graph, _ = load_graphs(reorder_bigraph_path)
                 self._graph = self._graph[0]
-        else:
-            self._graph, _ = load_graphs(graph_path)  
-            self._graph = self._graph[0]    
+        else: 
             if not os.path.exists(bigraph_path):
                 graphs, _ = load_graphs(graph_path)
                 self._graph = dgl.to_bidirected(graphs[0])
@@ -369,7 +367,7 @@ def train(args):
                 nids = torch.arange(g.number_of_nodes()).to(g.device)
             else:
                 nids = torch.randperm(g.number_of_nodes()).to(g.device)
-            pred = model.inference(g, args.batch_size, torch.device(device), feat, nids, args.use_uva, False)
+            pred = model.inference(g, args.batch_size, torch.device(device), feat, nids, args.use_uva, False, fan)
             cost_time = time.time() - st
             func_score = (torch.argmax(pred, dim=1) == labels).float().sum() / len(pred)
             if args.gpu != -1:
