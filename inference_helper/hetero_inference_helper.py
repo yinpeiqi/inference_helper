@@ -135,6 +135,65 @@ class HeteroInferenceHelper():
 
         return x
 
+    def static_inference_240m(
+        self,
+        hg: dgl.DGLHeteroGraph,
+        author_feats, institution_feats, paper_feats,
+        dataset,
+        device: torch.device, batch_size
+    ):
+        for i, func in enumerate(self._funcs):
+            sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
+            dataloader = dgl.dataloading.DataLoader(
+                hg,
+                {ntype: hg.nodes(ntype) for ntype in hg.ntypes},
+                sampler,
+                batch_size=batch_size,
+                shuffle=False,
+                drop_last=False,
+                # num_workers=num_workers,
+            )
+
+            if i < self.m._num_layers - 1:
+                y = {ntype: torch.zeros(hg.num_nodes(
+                    ntype), self.m._hidden_feats) for ntype in hg.ntypes}
+            else:
+                y = {ntype: torch.zeros(hg.num_nodes(
+                    ntype), self.m._out_feats) for ntype in hg.ntypes}
+
+            for ntype in hg.ntypes:
+                pin_memory_inplace(y[ntype])
+
+            for in_nodes, out_nodes, blocks in tqdm.tqdm(dataloader):
+                in_nodes = {rel: nid.to(device) for rel, nid in in_nodes.items()}
+                out_nodes = {rel: nid.to(device) for rel, nid in out_nodes.items()}
+                block = blocks[0].to(device)
+
+                if i == 0:
+                    new_feat = gather_pinned_tensor_rows(author_feats, in_nodes['author'])
+                    new_feat2 = gather_pinned_tensor_rows(institution_feats, in_nodes['institution'])
+                    new_feat3 = gather_pinned_tensor_rows(paper_feats, in_nodes['paper'])
+                else:
+                    new_feat = gather_pinned_tensor_rows(x['author'], in_nodes['author'])
+                    new_feat2 = gather_pinned_tensor_rows(x['institution'], in_nodes['institution'])
+                    new_feat3 = gather_pinned_tensor_rows(x['paper'], in_nodes['paper'])
+
+                hx = func(block, new_feat, new_feat2, new_feat3)
+
+                h_dict = {}
+                for j, ntype in enumerate(hg.ntypes):
+                    h_dict[ntype] = hx[j]
+                
+                for ntype in h_dict:
+                    if ntype in out_nodes:
+                        y[ntype][out_nodes[ntype]] = h_dict[ntype].cpu()
+
+                del new_feat, new_feat2, new_feat3, h_dict
+
+            x = y
+
+        return x
+
     def inference_240m(
         self,
         hg: dgl.DGLHeteroGraph,

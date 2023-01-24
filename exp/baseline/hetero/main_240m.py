@@ -34,6 +34,7 @@ if __name__ == '__main__':
     parser.add_argument('--full-feature-path', type=str, default='dataset/full.npy',
                         help='Path to the features of all nodes.')
     parser.add_argument('--batch-size', default=500, type=int)
+    parser.add_argument('--static', action='store_true')
     parser.add_argument('--auto', action='store_true')
     parser.add_argument("--model", default='RGCN', type=str)
     parser.add_argument('--free-rate', help="free memory rate", type=float, default=0.8)
@@ -102,6 +103,11 @@ if __name__ == '__main__':
             st = time.time()
             helper = HeteroInferenceHelper(model, torch.device(device), debug = True, free_rate=args.free_rate)
             ret = helper.inference_240m(hg, author_feats, institution_feats, paper_feats, dataset, torch.device(device))
+            print("inference time:", time.time() - st)
+        elif args.static:
+            st = time.time()
+            helper = HeteroInferenceHelper(model, torch.device(device), debug = True, free_rate=args.free_rate)
+            ret = helper.static_inference_240m(hg, author_feats, institution_feats, paper_feats, dataset, torch.device(device), args.batch_size)
             print("inference time:", time.time() - st)
         else:
             sst = time.time()
