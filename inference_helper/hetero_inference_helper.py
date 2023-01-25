@@ -149,7 +149,7 @@ class HeteroInferenceHelper():
                 {ntype: hg.nodes(ntype) for ntype in hg.ntypes},
                 sampler,
                 batch_size=batch_size,
-                shuffle=False,
+                shuffle=True,
                 drop_last=False,
                 # num_workers=num_workers,
             )
